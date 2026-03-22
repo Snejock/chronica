@@ -1,0 +1,33 @@
+name: chronica
+
+services:
+  chr-rss-fetcher:
+    build:
+      context: ..
+      dockerfile: compose/Dockerfile
+    container_name: chr-rss-fetcher
+    env_file:
+      - path: ../../../common/.env.server
+        required: true
+    restart: unless-stopped
+    networks:
+      - dwh-net
+    dns:
+      - 192.168.1.10
+    volumes:
+      # - ../config/config.yml:/app/config/config.yml:ro
+      - ../log:/app/log
+    environment:
+      - TZ=Europe/Moscow
+      - PYTHONUNBUFFERED=1
+    init: true
+    command: ["python", "rss-fetcher.py"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dwh-net:
+    external: true

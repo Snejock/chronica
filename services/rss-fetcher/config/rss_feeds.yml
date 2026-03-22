@@ -1,0 +1,30 @@
+rss_feeds:
+  - id: 1
+    name: "Interfax"
+    link: "https://www.interfax.ru/rss"
+    type: "independent"
+    location:
+      country_code: "ru"
+      city: "Moscow"
+    language_code: "ru"
+    interval: 60
+
+  - id: 2
+    name: "BBC News"
+    link: "https://feeds.bbci.co.uk/news/world/rss.xml"
+    type: "independent"
+    location:
+      country_code: "gb"
+      city: "London"
+    language_code: "en"
+    interval: 60
+
+  - id: 3
+    name: "The New York Times"
+    link: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+    type: "independent"
+    location:
+      country_code: "us"
+      city: "New York"
+    language_code: "en"
+    interval: 60

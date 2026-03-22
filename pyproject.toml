@@ -1,0 +1,10 @@
+[project]
+name = "chronica"
+version = "0.1.0"
+description = "Chronica Project Workspace"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["services/*", "common"]

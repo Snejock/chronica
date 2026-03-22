@@ -1,0 +1,16 @@
+[project]
+name = "rss-fetcher"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.14"
+dependencies = [
+    "chronica-common",
+    "clickhouse-connect>=0.10.0",
+    "confluent-kafka[avro,schema-registry]>=2.13.0",
+    "feedparser>=6.0.12",
+    "httpx[http2]>=0.28.1",
+    "pyyaml>=6.0.3",
+]
+
+[tool.uv.sources]
+chronica-common = { workspace = true }

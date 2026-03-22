@@ -1,0 +1,9 @@
+name: chronica
+
+include:
+  - services/rss-fetcher/compose/docker-compose.yml
+
+networks:
+  dwh-net:
+    driver: bridge
+    name: dwh-net
