@@ -32,3 +32,9 @@ RUN uv sync --frozen --no-dev
 # Добавляется виртуальное окружение в PATH
 # uv по умолчанию создает venv в .venv, python добавляется в ENV
 ENV PATH="/app/.venv/bin:$PATH"
+
+# Переходим в директорию сервиса
+WORKDIR /app/services/rss-fetcher
+
+# Создаем папку для логов (если нужно)
+RUN mkdir -p log
