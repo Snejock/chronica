@@ -3,7 +3,7 @@ name: chronica
 services:
   chr-rss-fetcher:
     build:
-      context: ..
+      context: ../../../
       dockerfile: compose/Dockerfile
     container_name: chr-rss-fetcher
     env_file:
