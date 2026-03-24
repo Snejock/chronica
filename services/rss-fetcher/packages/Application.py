@@ -19,13 +19,10 @@ class Application:
         self.feed_list = self._load_rss_feeds(config_path)
         self.topic = TOPIC
 
-        logger.debug("Initializing providers...")
         self.ch_provider = ClickhouseProvider(config=self.config)
         self.rss_provider = RSSProvider(timeout_sec=10)
         self.br_provider = BrokerProvider(config=self.config)
         self.parser = RSSFeedParser()
-
-        logger.info("All components have been successfully initialized")
 
     async def processing(self, feed: RSSFeed) -> None:
         logger.info(f"Starting worker for source: {feed.name}")
@@ -74,11 +71,13 @@ class Application:
     async def run(self):
         """Запуск приложения: инициализация ресурсов и создание корутин"""
         try:
+            logger.debug("Initializing providers...")
             await asyncio.gather(
                 self.rss_provider.open(),
                 self.ch_provider.open(),
                 self.br_provider.open(),
             )
+            logger.info("All components have been successfully initialized")
             await self._init_db()
 
             tasks = [asyncio.create_task(self.processing(feed)) for feed in self.feed_list]
