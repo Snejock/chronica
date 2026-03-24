@@ -6,9 +6,10 @@ logger = logging.getLogger(__name__)
 
 
 class RSSProvider:
-    def __init__(self, timeout_sec: int = 10):
+    def __init__(self, timeout_sec: int = 10, proxy_url: str | None = None):
         self._client: httpx.AsyncClient | None = None
         self._timeout = timeout_sec
+        self._proxy_url = proxy_url
 
     async def open(self):
         if self._client is None:
@@ -16,7 +17,8 @@ class RSSProvider:
                 http2=True,
                 timeout=self._timeout,
                 follow_redirects=True,
-                headers={"User-Agent": "rss-fetcher/1.0"}
+                headers={"User-Agent": "rss-fetcher/1.0"},
+                proxy=self._proxy_url
             )
             logger.info("RSS HTTP client initialized")
 

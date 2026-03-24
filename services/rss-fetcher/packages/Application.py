@@ -18,9 +18,11 @@ class Application:
         self.config = Config()
         self.feed_list = self._load_rss_feeds(config_path)
         self.topic = TOPIC
-
+        self.rss_provider = RSSProvider(
+            timeout_sec=10,
+            proxy_url=f"socks5://{self.config.proxy.user}:{self.config.proxy.password}@{self.config.proxy.host}:{self.config.proxy.port}"
+        )
         self.ch_provider = ClickhouseProvider(config=self.config)
-        self.rss_provider = RSSProvider(timeout_sec=10)
         self.br_provider = BrokerProvider(config=self.config)
         self.parser = RSSFeedParser()
 
