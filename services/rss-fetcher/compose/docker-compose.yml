@@ -16,7 +16,7 @@ services:
 #      - 192.168.1.10
     volumes:
       # - ../config/config.yml:/app/config/config.yml:ro
-      - ../log:/app/log
+      - ../log:/app/services/rss-fetcher/log
     environment:
       - TZ=Europe/Moscow
       - PYTHONUNBUFFERED=1
