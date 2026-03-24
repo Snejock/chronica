@@ -20,6 +20,7 @@ services:
     environment:
       - TZ=Europe/Moscow
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
     init: true
     command: ["python", "rss-fetcher.py"]
     logging:
