@@ -80,7 +80,7 @@ class Application:
                 self.br_provider.open(),
             )
             logger.info("All components have been successfully initialized")
-            await self._init_db()
+            # await self._init_db()
 
             tasks = [asyncio.create_task(self.processing(feed)) for feed in self.feed_list]
             logger.info(f"Started {len(tasks)} workers. Press Ctrl+C to stop.")
@@ -147,7 +147,7 @@ class Application:
                     link            String
                 )
                 ENGINE = ReplacingMergeTree
-                ORDER BY (feed_id, news_id)                    
+                ORDER BY (news_id)                    
             """)
 
             await self.ch_provider.query("""
