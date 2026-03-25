@@ -9,7 +9,6 @@ class RSSFeedParser:
         for entry in feed.entries:
             item_list.append(
                 {
-                    "news_id": getattr(entry, "id", getattr(entry, "link", "")),
                     "published": getattr(entry, "published", None),
                     "title": getattr(entry, "title", ""),
                     "summary": getattr(entry, "summary", ""),

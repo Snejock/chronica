@@ -14,7 +14,6 @@ RSS_NEWS_SCHEMA = """
     "namespace": "chronica",
     "fields": [
         {"name": "source_system", "type": "string"},
-        {"name": "news_id", "type": "string"},
         {"name": "published_loc", "type": "string"},
         {"name": "published_utc", "type": "long"},
         {"name": "feed_id", "type": "int"},
@@ -79,7 +78,7 @@ class BrokerProvider:
         try:
             self._producer.produce(
                 topic=topic,
-                key=str(message["news_id"]),
+                key=str(message["link"]),
                 value=message,
                 on_delivery=self._delivery_report
             )

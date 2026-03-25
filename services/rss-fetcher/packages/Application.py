@@ -56,19 +56,19 @@ class Application:
                                     max_cursor = item.published_utc
 
                         except Exception as err:
-                            logger.warning(f"Invalid item in feed {feed.name} (id {feed.id}): {err}")
+                            logger.warning(f"Invalid item in feed_nm {feed.name} (feed_id {feed.id}): {err}")
                             continue
 
                     # Курсор обновляется только после обработки всего батча
                     feed.cursor = max_cursor
 
                 except Exception as err:
-                    logger.error(f"Error in processing for {feed.name} (id: {feed.id}): {err}", exc_info=True)
+                    logger.error(f"Error in processing for feed_nm {feed.name} (feed_id {feed.id}): {err}", exc_info=True)
 
                 await asyncio.sleep(feed.interval)
 
         except asyncio.CancelledError:
-            logger.info(f"Worker for {feed.name} (id: {feed.id}) was cancelled")
+            logger.info(f"Worker for feed_nm {feed.name} (feed_id {feed.id}) was cancelled")
 
     async def run(self):
         """Запуск приложения: инициализация ресурсов и создание корутин"""
@@ -118,7 +118,6 @@ class Application:
                 CREATE TABLE IF NOT EXISTS chr_stg.kafka_rss_news
                 (
                     source_system   LowCardinality(String),
-                    news_id         String,
                     published_utc   DateTime,
                     feed_id         Int32,
                     feed_nm         LowCardinality(String),
@@ -139,7 +138,7 @@ class Application:
                 (
                     loaded          DateTime DEFAULT now(),
                     source_system   LowCardinality(String),
-                    news_id         String,
+                    news_id         UInt64,
                     published_utc   DateTime,
                     feed_id         Int32,
                     feed_nm         LowCardinality(String),
@@ -148,14 +147,14 @@ class Application:
                     link            String
                 )
                 ENGINE = ReplacingMergeTree
-                ORDER BY (published_utc, feed_id, news_id)                    
+                ORDER BY (feed_id, news_id)                    
             """)
 
             await self.ch_provider.query("""
                 CREATE MATERIALIZED VIEW IF NOT EXISTS chr_stg.mv_rss_news TO chr_stg.rss_news AS
                 SELECT
                     source_system,
-                    news_id,
+                    xxHash64(link)          AS news_id,
                     published_utc,
                     feed_id,
                     feed_nm,
@@ -190,7 +189,7 @@ class Application:
                     logger.warning("Table is empty or NULL returned, setting cursor to min datetime")
                     feed.cursor = datetime.min.replace(tzinfo=timezone.utc)
 
-                logger.info(f"Cursor initialized for {feed.name} (id: {feed.id}): {feed.cursor}")
+                logger.info(f"Cursor initialized for feed_nm {feed.name} (feed_id {feed.id}): {feed.cursor}")
                 return
 
             except Exception as err:

@@ -6,7 +6,6 @@ from dateutil import parser
 
 class RSSItem(BaseModel):
     source_system:  Annotated[str, Field(default="RSS", description="Код системы источника")]
-    news_id:        Annotated[str, Field(description="Уникальный ID новости")]
     published:      Annotated[str, Field(description="Дата и время публикации в исходном формате и таймзоне")]
     feed_id:        Annotated[int | None, Field(default=None)]
     feed_nm:        Annotated[str | None, Field(default=None)]
