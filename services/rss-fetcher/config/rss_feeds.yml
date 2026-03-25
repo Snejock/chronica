@@ -28,3 +28,33 @@ rss_feeds:
       city: "New York"
     language_code: "en"
     interval: 60
+
+  - id: 4
+    name: "RBC"
+    link: "https://rssexport.rbc.ru/rbcnews/news/30/full.rss"
+    type: "independent"
+    location:
+      country_code: "ru"
+      city: "Moscow"
+    language_code: "ru"
+    interval: 60
+
+  - id: 5
+    name: "Kommersant"
+    link: "https://www.kommersant.ru/rss/news.xml"
+    type: "independent"
+    location:
+      country_code: "ru"
+      city: "Moscow"
+    language_code: "ru"
+    interval: 60
+
+  - id: 6
+    name: "Al Jazeera"
+    link: "https://www.aljazeera.com/xml/rss/all.xml"
+    type: "independent"
+    location:
+      country_code: "qa"
+      city: "Doha"
+    language_code: "en"
+    interval: 60
