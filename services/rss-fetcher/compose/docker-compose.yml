@@ -5,6 +5,7 @@ services:
     build:
       context: ../../../
       dockerfile: services/rss-fetcher/compose/Dockerfile
+      network: host
     container_name: chr-rss-fetcher
     env_file:
       - path: ../../../common/.env.server

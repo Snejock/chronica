@@ -5,7 +5,7 @@ from pydantic import HttpUrl
 logger = logging.getLogger(__name__)
 
 
-class RSSProvider:
+class HttpProvider:
     def __init__(self, timeout_sec: int = 10, proxy_url: str | None = None):
         self._client: httpx.AsyncClient | None = None
         self._timeout = timeout_sec
@@ -20,7 +20,7 @@ class RSSProvider:
                 headers={"User-Agent": "rss-fetcher/1.0"},
                 proxy=self._proxy_url
             )
-            logger.info("RSS HTTP client initialized")
+            logger.info("HTTP client initialized")
 
     async def fetch(self, url: str | HttpUrl) -> str:
         if self._client is None:
@@ -34,4 +34,4 @@ class RSSProvider:
         if self._client:
             await self._client.aclose()
             self._client = None
-            logger.info("RSS HTTP client closed")
+            logger.info("HTTP client closed")

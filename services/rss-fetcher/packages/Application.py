@@ -4,7 +4,7 @@ import yaml
 from datetime import datetime, timezone
 
 from models import Config, RSSFeed, RSSFeedList, RSSItem
-from packages.providers import RSSProvider, ClickhouseProvider, BrokerProvider
+from packages.providers import HttpProvider, ClickhouseProvider, BrokerProvider
 from packages.parsers import RSSFeedParser
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class Application:
         self.config = Config()
         self.feed_list = self._load_rss_feeds(config_path)
         self.topic = TOPIC
-        self.rss_provider = RSSProvider(
+        self.http_provider = HttpProvider(
             timeout_sec=10,
             proxy_url=f"socks5://{self.config.proxy.user}:{self.config.proxy.password}@{self.config.proxy.host}:{self.config.proxy.port}"
         )
@@ -34,7 +34,7 @@ class Application:
         try:
             while True:
                 try:
-                    response = await self.rss_provider.fetch(feed.link)
+                    response = await self.http_provider.fetch(feed.link)
                     item_list = self.parser.parse(response)
                     max_cursor = feed.cursor
 
@@ -75,7 +75,7 @@ class Application:
         try:
             logger.debug("Initializing providers...")
             await asyncio.gather(
-                self.rss_provider.open(),
+                self.http_provider.open(),
                 self.ch_provider.open(),
                 self.br_provider.open(),
             )
@@ -90,7 +90,7 @@ class Application:
             logger.info("Application stopping...")
         finally:
             logger.info("Cleaning up resources...")
-            await self.rss_provider.close()
+            await self.http_provider.close()
             await self.ch_provider.close()
             await self.br_provider.close()
             logger.info("Providers have been successfully closed")
