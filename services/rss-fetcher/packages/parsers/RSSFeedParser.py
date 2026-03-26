@@ -1,4 +1,5 @@
 import feedparser
+import ftfy
 
 
 class RSSFeedParser:
@@ -10,8 +11,8 @@ class RSSFeedParser:
             item_list.append(
                 {
                     "published": getattr(entry, "published", None),
-                    "title": getattr(entry, "title", ""),
-                    "summary": getattr(entry, "summary", ""),
+                    "title": ftfy.fix_text(getattr(entry, "title", "")),
+                    "summary": ftfy.fix_text(getattr(entry, "summary", "")),
                     "link": getattr(entry, "link", ""),
                 }
             )

@@ -10,6 +10,7 @@ dependencies = [
     "feedparser>=6.0.12",
     "httpx[http2, socks]>=0.28.1",
     "pyyaml>=6.0.3",
+    "ftfy>=6.3.1"
 ]
 
 [tool.uv.sources]
