@@ -48,7 +48,6 @@ class Application:
 
                                 # Отправка в брокер
                                 payload = item.model_dump()
-                                payload["published_loc"] = item.published
                                 payload["published_utc"] = int(item.published_utc.timestamp())
                                 self.br_provider.produce(payload, topic=self.topic)
 

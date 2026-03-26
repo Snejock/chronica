@@ -10,7 +10,7 @@ class RSSFeedParser:
         for entry in feed.entries:
             item_list.append(
                 {
-                    "published": getattr(entry, "published", None),
+                    "published_loc": getattr(entry, "published", None),
                     "title": ftfy.fix_text(getattr(entry, "title", "")),
                     "summary": ftfy.fix_text(getattr(entry, "summary", "")),
                     "link": getattr(entry, "link", ""),
