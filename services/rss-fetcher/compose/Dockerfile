@@ -21,14 +21,26 @@ COPY services/rss-fetcher/pyproject.toml ./services/rss-fetcher/
 # --no-dev: не устанавливаем dev-зависимости
 # --no-install-project: устанавливаем только библиотеки, сам проект пока не трогаем
 # --package rss-fetcher: установка зависимостей только этого сервиса
-RUN uv sync --frozen --no-dev --no-install-project --package rss-fetcher
+RUN uv sync \
+    --index-url https://mirrors.aliyun.com/pypi/simple \
+    --default-index https://mirrors.aliyun.com/pypi/simple \
+    --frozen \
+    --no-dev \
+    --no-install-project \
+    --package rss-fetcher
 
 # Копирование исходного кода
 COPY common/ ./common/
 COPY services/rss-fetcher/ ./services/rss-fetcher/
 
 # Финальная синхронизация проекта
-RUN uv sync --frozen --no-dev --no-editable --package rss-fetcher
+RUN uv sync \
+    --index-url https://mirrors.aliyun.com/pypi/simple \
+    --default-index https://mirrors.aliyun.com/pypi/simple \
+    --frozen \
+    --no-dev \
+    --no-editable \
+    --package rss-fetcher
 
 # Установка рабочей директории сервиса
 WORKDIR /app/services/rss-fetcher
