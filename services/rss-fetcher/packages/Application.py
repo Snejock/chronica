@@ -72,8 +72,6 @@ class Application:
     async def run(self):
         """Запуск приложения: инициализация ресурсов и создание корутин"""
         try:
-            self.feed_list = await self._load_feeds_from_db()
-            pass
             logger.debug("Initializing providers...")
             await asyncio.gather(
                 self.http_provider.open(),
@@ -81,6 +79,8 @@ class Application:
                 self.br_provider.open(),
             )
             logger.info("All components have been successfully initialized")
+
+            self.feed_list = await self._load_feeds_from_db()
 
             tasks = [asyncio.create_task(self.processing(feed)) for feed in self.feed_list]
             logger.info(f"Started {len(tasks)} workers. Press Ctrl+C to stop.")
