@@ -19,8 +19,8 @@ RSS_NEWS_SCHEMA = """
         {"name": "feed_id", "type": "int"},
         {"name": "feed_nm", "type": "string"},
         {"name": "title", "type": "string"},
-        {"name": "summary", "type": ["null", "string"], "default": null},
-        {"name": "link", "type": ["null", "string"], "default": null}
+        {"name": "summary", "type": "string", "default": ""},
+        {"name": "link", "type": "string", "default": ""}
     ]
 }
 """
