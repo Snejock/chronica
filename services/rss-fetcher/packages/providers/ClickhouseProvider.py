@@ -60,7 +60,7 @@ class ClickhouseProvider:
         except Exception:
             logger.exception(f"ClickhouseProvider error")
 
-    async def query(self, sql: str, params: dict|None = None) -> list[tuple|list]:
+    async def execute(self, sql: str, params: dict | None = None) -> list[tuple | list]:
         """
         Выполнить запрос и вернуть строки результата.
         :param sql: SQL запрос
@@ -74,5 +74,5 @@ class ClickhouseProvider:
             return response.result_rows
 
         except Exception:
-            logger.exception("ClickhouseProvider.query error")
+            logger.exception("ClickhouseProvider.execute error")
             raise
