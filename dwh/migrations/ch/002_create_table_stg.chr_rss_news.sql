@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS chr_stg.kafka_rss_news
+CREATE TABLE IF NOT EXISTS stg.kafka_chr_rss_news
 (
     source_system   LowCardinality(String),
     published_utc   DateTime,
@@ -10,13 +10,13 @@ CREATE TABLE IF NOT EXISTS chr_stg.kafka_rss_news
 )
 ENGINE = Kafka
 SETTINGS kafka_broker_list = 'dwh-rp-1:9092',
-         kafka_topic_list = 'chronica.stg.rss_news',
-         kafka_group_name = 'chronica.ch.rss_news',
+         kafka_topic_list = 'stg.chr_rss_news',
+         kafka_group_name = 'ch.chr_rss_news',
          kafka_format = 'AvroConfluent',
          format_avro_schema_registry_url = 'http://dwh-rp-1:8081'
 ;
 
-CREATE TABLE IF NOT EXISTS chr_stg.rss_news
+CREATE TABLE IF NOT EXISTS stg.chr_rss_news
 (
     loaded              DateTime DEFAULT now(),
     source_system       LowCardinality(String),
@@ -32,7 +32,7 @@ ENGINE = ReplacingMergeTree
 ORDER BY (news_id)
 ;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS chr_stg.mv_rss_news TO chr_stg.rss_news AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS stg.mv_chr_rss_news TO stg.chr_rss_news AS
     SELECT
         source_system,
         xxHash64(link)          AS news_id,
@@ -42,5 +42,5 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS chr_stg.mv_rss_news TO chr_stg.rss_news A
         title,
         coalesce(summary, '')   AS summary,
         coalesce(link, '')      AS link
-    FROM chr_stg.kafka_rss_news
+    FROM stg.kafka_chr_rss_news
 ;
