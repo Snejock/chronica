@@ -24,6 +24,13 @@ class ClickhouseConfig(BaseModel):
     password: str
     secure: bool
 
+class PostgresConfig(BaseModel):
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str
+
 class GoogleAIConfig(BaseModel):
     api_key: str
 
@@ -36,6 +43,7 @@ class ProxyConfig(BaseModel):
 class Config(BaseSettings):
     broker: Annotated[BrokerConfig | None, Field(default=None)]
     clickhouse: Annotated[ClickhouseConfig | None, Field(default=None)]
+    postgres: Annotated[PostgresConfig | None, Field(default=None)]
     google_ai: Annotated[GoogleAIConfig | None, Field(default=None)]
     proxy: Annotated[ProxyConfig | None, Field(default=None)]
 

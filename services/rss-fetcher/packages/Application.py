@@ -4,7 +4,7 @@ import yaml
 from datetime import datetime, timezone
 
 from models import Config, RSSFeed, RSSFeedList, RSSItem
-from packages.providers import HttpProvider, ClickhouseProvider, BrokerProvider
+from packages.providers import HttpProvider, PostgresProvider, BrokerProvider
 from packages.parsers import RSSFeedParser
 
 logger = logging.getLogger(__name__)
@@ -16,13 +16,13 @@ class Application:
     def __init__(self, config_path: str = "./config/rss_feeds.yml", cursor: int | None = None):
         logger.info("Initialize application...")
         self.config = Config()
-        self.feed_list = self._load_rss_feeds(config_path)
+        self.feed_list = None
         self.topic = TOPIC
         self.http_provider = HttpProvider(
-            timeout_sec=10,
+            timeout_sec=30,
             proxy_url=f"socks5://{self.config.proxy.user}:{self.config.proxy.password}@{self.config.proxy.host}:{self.config.proxy.port}"
         )
-        self.ch_provider = ClickhouseProvider(config=self.config)
+        self.pg_provider = PostgresProvider(config=self.config)
         self.br_provider = BrokerProvider(config=self.config)
         self.parser = RSSFeedParser()
 
@@ -72,14 +72,15 @@ class Application:
     async def run(self):
         """Запуск приложения: инициализация ресурсов и создание корутин"""
         try:
+            self.feed_list = await self._load_feeds_from_db()
+            pass
             logger.debug("Initializing providers...")
             await asyncio.gather(
                 self.http_provider.open(),
-                self.ch_provider.open(),
+                self.pg_provider.open(),
                 self.br_provider.open(),
             )
             logger.info("All components have been successfully initialized")
-            # await self._init_db()
 
             tasks = [asyncio.create_task(self.processing(feed)) for feed in self.feed_list]
             logger.info(f"Started {len(tasks)} workers. Press Ctrl+C to stop.")
@@ -90,13 +91,13 @@ class Application:
         finally:
             logger.info("Cleaning up resources...")
             await self.http_provider.close()
-            await self.ch_provider.close()
+            await self.pg_provider.close()
             await self.br_provider.close()
             logger.info("Providers have been successfully closed")
 
     @staticmethod
-    def _load_rss_feeds(path: str) -> list[RSSFeed]:
-        """Загрузка и валидация списка RSS-лент."""
+    def _load_feeds_from_file(path: str) -> list[RSSFeed]:
+        """Загрузка списка RSS-лент из YAML файла."""
         try:
             with open(path, "r") as f:
                 data = yaml.safe_load(f)
@@ -106,80 +107,57 @@ class Application:
             logger.error(f"RSS sources file not found: {path}")
             raise
         except Exception as err:
-            logger.error(f"Failed to parse RSS feed list: {err}")
+            logger.error(f"Failed to load feeds from file {path}: {err}")
             raise
 
-    async def _init_db(self) -> None:
+    async def _load_feeds_from_db(self) -> list[RSSFeed]:
+        """Загрузка списка RSS-лент из базы данных (postgres)."""
         try:
-            await self.ch_provider.query("CREATE DATABASE IF NOT EXISTS chr_stg")
-
-            await self.ch_provider.query(f"""
-                CREATE TABLE IF NOT EXISTS chr_stg.kafka_rss_news
-                (
-                    source_system   LowCardinality(String),
-                    published_utc   DateTime,
-                    feed_id         Int32,
-                    feed_nm         LowCardinality(String),
-                    title           String,
-                    summary         Nullable(String),
-                    link            Nullable(String)
-                )
-                ENGINE = Kafka
-                SETTINGS kafka_broker_list = '{self.config.broker.host}:{self.config.broker.port}',
-                         kafka_topic_list = '{self.topic}',
-                         kafka_group_name = 'chronica.ch_rss_news',
-                         kafka_format = 'AvroConfluent',
-                         format_avro_schema_registry_url = '{self.config.broker.schema_registry_url}'
+            result = await self.pg_provider.fetch("""
+                SELECT 
+                    feed_id AS id, 
+                    feed_nm AS name, 
+                    feed_link AS link, 
+                    feed_type AS type, 
+                    country_code,
+                    city_nm AS city, 
+                    language_code,
+                    interval_sec AS interval,
+                    is_active
+                FROM dtl.chr_rss_feeds 
+                WHERE is_active = true;
             """)
 
-            await self.ch_provider.query("""
-                CREATE TABLE IF NOT EXISTS chr_stg.rss_news
-                (
-                    loaded          DateTime DEFAULT now(),
-                    source_system   LowCardinality(String),
-                    news_id         UInt64,
-                    published_utc   DateTime,
-                    feed_id         Int32,
-                    feed_nm         LowCardinality(String),
-                    title           String,
-                    summary         String,
-                    link            String
-                )
-                ENGINE = ReplacingMergeTree
-                ORDER BY (news_id)                    
-            """)
+            feeds = []
+            for row in result:
+                d = dict(row)
 
-            await self.ch_provider.query("""
-                CREATE MATERIALIZED VIEW IF NOT EXISTS chr_stg.mv_rss_news TO chr_stg.rss_news AS
-                SELECT
-                    source_system,
-                    xxHash64(link)          AS news_id,
-                    published_utc,
-                    feed_id,
-                    feed_nm,
-                    title,
-                    coalesce(summary, '')   AS summary,
-                    coalesce(link, '')      AS link
-                FROM chr_stg.kafka_rss_news
-            """)
+                # Формируем вложенную структуру для Location
+                # (Pydantic требует объект location, а не плоские поля)
+                d["location"] = {
+                    "country_code": d.pop("country_code"),
+                    "city": d.pop("city")
+                }
 
-            logger.info("ClickHouse schema ensured (database/table present)")
-        except Exception:
-            logger.exception("Failed to initialize ClickHouse schema")
-            raise
+                feeds.append(RSSFeed(**d))
+
+            return feeds
+
+        except Exception as err:
+            logger.error(f"Failed to load feeds from database: {err}")
 
     async def _get_cursor(self, feed):
-        logger.info("Getting initial cursor from ClickHouse...")
+        logger.info("Getting initial cursor from database...")
 
         while True:
             try:
-                result = await self.ch_provider.query(
+                result = await self.pg_provider.fetch(
                     """
                         SELECT max(published_utc)
-                        FROM chr_stg.rss_news
-                        WHERE feed_id = {feed_id:int}
+                        FROM stg.chr_rss_news
+                        WHERE feed_id = $1
                     """,
-                    {"feed_id": feed.id}
+                    feed.id
                 )
 
                 if result and result[0][0] is not None:
