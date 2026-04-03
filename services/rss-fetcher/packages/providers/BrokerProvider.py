@@ -5,25 +5,9 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
 
-logger = logging.getLogger(__name__)
+from common.schemas import stg_chr_rss_news
 
-RSS_NEWS_SCHEMA = """
-{
-    "type": "record",
-    "name": "RSSNews",
-    "namespace": "chronica",
-    "fields": [
-        {"name": "source_system", "type": "string"},
-        {"name": "published_loc", "type": "string"},
-        {"name": "published_utc", "type": "long"},
-        {"name": "feed_id", "type": "int"},
-        {"name": "feed_nm", "type": "string"},
-        {"name": "title", "type": "string"},
-        {"name": "summary", "type": "string", "default": ""},
-        {"name": "link", "type": "string", "default": ""}
-    ]
-}
-"""
+logger = logging.getLogger(__name__)
 
 
 class BrokerProvider:
@@ -40,7 +24,7 @@ class BrokerProvider:
                     sr_client = SchemaRegistryClient({'url': schema_registry_url})
                     avro_serializer = AvroSerializer(
                         schema_registry_client=sr_client,
-                        schema_str=RSS_NEWS_SCHEMA,
+                        schema_str=stg_chr_rss_news,
                         conf={'auto.register.schemas': True}
                     )
                     string_serializer = StringSerializer('utf_8')
