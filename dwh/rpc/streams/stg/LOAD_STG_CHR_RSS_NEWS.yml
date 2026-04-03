@@ -1,8 +1,3 @@
-cache_resources:
-  - label: link_cache
-    memory:
-      default_ttl: 24h
-
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
