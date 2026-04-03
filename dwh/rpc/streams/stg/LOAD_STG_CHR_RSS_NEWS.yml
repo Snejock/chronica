@@ -1,3 +1,8 @@
+cache_resources:
+  - label: link_cache
+    memory:
+      default_ttl: 24h
+
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
@@ -8,6 +13,10 @@ pipeline:
   processors:
     - schema_registry_decode:
         url: "http://dwh-rp-1:8081"
+
+    - dedupe:
+        cache: link_cache
+        key: ${! this.link }
 
 output:
   sql_raw:
