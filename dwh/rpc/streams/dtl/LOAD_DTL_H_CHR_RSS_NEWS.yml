@@ -11,7 +11,7 @@ pipeline:
 
     - dedupe:
         cache: pg_dtl_h_chr_rss_news
-        key: ${! this.link }
+        key: "pg_dtl_h_chr_rss_news:link:${! this.link }"
 
 output:
   sql_raw:
