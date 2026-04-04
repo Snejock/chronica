@@ -10,7 +10,7 @@ pipeline:
         url: "http://dwh-rp-1:8081"
 
     - dedupe:
-        cache: pg_dtl_h_chr_rss_news_cache
+        cache: pg_dtl_h_chr_rss_news
         key: ${! this.link }
 
 output:
