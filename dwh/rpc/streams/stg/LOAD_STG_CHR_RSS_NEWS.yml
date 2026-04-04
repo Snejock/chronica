@@ -1,8 +1,8 @@
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
-    topics: ["chronica.stg.rss_news"]
-    consumer_group: "chronica.pg.rss_news"
+    topics: ["stg_chr_rss_news"]
+    consumer_group: "pg.stg_chr_rss_news"
 
 pipeline:
   processors:

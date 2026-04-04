@@ -1,7 +1,7 @@
 stg_chr_rss_news = """
 {
     "type": "record",
-    "name": "RSSNews",
+    "name": "RSSItem",
     "namespace": "chronica",
     "fields": [
         {"name": "source_system", "type": "string"},

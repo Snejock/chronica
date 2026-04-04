@@ -21,12 +21,3 @@ class RSSItem(BaseModel):
     @property
     def news_id(self) -> str:
         return xxhash.xxh64(self.link.encode('utf-8'), seed=0).hexdigest()
-
-
-class RSSItemTranslation(BaseModel):
-    news_id:            Annotated[str, Field(description="Уникальный идентификатор новости")]
-    language_code:      Annotated[str, Field(description="Код языка перевода (ISO 639-1)")]
-    translation_engine: Annotated[str | None, Field(default=None, description="Движок перевода")]
-    title:              Annotated[str, Field(..., min_length=1, description="Заголовок сообщения")]
-    link:               Annotated[str, Field(..., description="Ссылка на сообщение")]
-    summary:            Annotated[str | None, Field(default=None, description="Краткое содержание")]

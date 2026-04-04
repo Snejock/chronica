@@ -9,7 +9,7 @@ from packages.parsers import RSSFeedParser
 
 logger = logging.getLogger(__name__)
 
-TOPIC = "chronica.stg.rss_news"
+TOPIC = "stg_chr_rss_news"
 
 
 class Application:
@@ -111,7 +111,7 @@ class Application:
             raise
 
     async def _load_feeds_from_db(self) -> list[RSSFeed]:
-        """Загрузка списка RSS-лент из базы данных (postgres)."""
+        """Загрузка списка RSS-лент из базы данных (Postgres)."""
         try:
             result = await self.pg_provider.fetch("""
                 SELECT 
@@ -124,7 +124,7 @@ class Application:
                     language_code,
                     interval_sec AS interval,
                     is_active
-                FROM dtl.chr_rss_feeds 
+                FROM dtl.d_chr_rss_feeds 
                 WHERE is_active = true;
             """)
 
