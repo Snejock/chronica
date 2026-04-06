@@ -1,0 +1,147 @@
+input:
+  redpanda:
+    seed_brokers: ["dwh-rp-1:9092"]
+    topics: ["stg_chr_rss_news"]
+    consumer_group: "pg.dtl_s_chr_rss_news_texts"
+
+pipeline:
+  processors:
+    - schema_registry_decode:
+        url: "http://dwh-rp-1:8081"
+
+    - dedupe:
+        cache: pg_dtl_s_chr_rss_news_texts
+        key: "pg_dtl_s_chr_rss_news_texts:link:${! this.link }"
+
+    # получение из кэша language_code для this.feed_id
+    - branch:
+        processors:
+          - cache:
+              resource: pg_dtl_d_chr_rss_feeds
+              operator: get
+              key: 'pg_dtl_d_chr_rss_feeds:language_code:${! this.feed_id }'
+        result_map: 'root.language_code = content().string()'
+
+    # получение из базы (при отсутствии в кэше) значения language_code для this.feed_id
+    - branch:
+        request_map: |
+          root = if this.language_code == null || this.language_code == "" {this} else { deleted() }
+        processors:
+          - sql_raw:
+              driver: postgres
+              dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+              query: "SELECT feed_id, language_code FROM dtl.d_chr_rss_feeds WHERE feed_id = $1"
+              args_mapping: "root = [this.feed_id]"
+          # добавление значения language_code в кэш
+          - cache:
+              resource: pg_dtl_d_chr_rss_feeds
+              operator: set
+              key: 'pg_dtl_d_chr_rss_feeds:language_code:${! this.0.feed_id }'
+              value: '${! this.0.language_code }'
+        result_map: 'root.language_code = this.0.language_code.or("unknown")'
+
+    # установка флага необходимости перевода
+    - mapping: |
+        root = this
+        root.is_needs_translation = this.language_code != "en" && this.language_code != null
+
+    # выполнение перевода (если необходимо)
+    - branch:
+        request_map: |
+          root = if this.is_needs_translation {
+            {
+              "model": "translategemma:4b",
+              "stream": false,
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a professional translator. Translate content to English and return ONLY JSON."
+                },
+                {
+                  "role": "user",
+                  "content": "Title: " + this.title + "\nSummary: " + this.summary
+                }
+              ],
+              "format": {
+                "type": "object",
+                "properties": {
+                  "title": {"type": "string"},
+                  "summary": {"type": "string"}
+                },
+                "required": ["title", "summary"]
+              }
+            }
+          } else { deleted() }
+        processors:
+          - http:
+              url: "http://dwh-ol-1:11434/api/chat"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+              timeout: 5m
+          - mapping: |
+              let result = this.message.content.parse_json()
+              root.translated_title = $result.title
+              root.translated_summary = $result.summary
+        # объединение оригинала и результата перевода
+        result_map: |
+          # root - это исходный объект (со всеми полями: id, date, title, summary и т.д.)
+          # this - это то, что получилось в конце цепочки processors внутри branch
+
+          root.translated_title = this.translated_title
+          root.translated_summary = this.translated_summary
+          # оригинальные поля title и summary при этом не трогаются и остаются в root
+
+    # логирование результата перевода
+    - log:
+        level: INFO
+        message: |
+          ${! "LINK: " + this.link + "ORIGINAL (" + this.language_code.string() + "): " + this.title.string() + "; TRANSLATED (en): " + this.translated_title.string().or("N/A (Skipped)")}
+
+    # формирование массива [оригинал + перевод]
+    - mapping: |
+        root = []
+
+        # оригинал
+        if this.link != null && this.title != null && this.summary != null {
+          root = root.append({
+            "link": this.link,
+            "language_code": this.language_code,
+            "title": this.title,
+            "summary": this.summary
+          })
+        }
+
+        # перевод
+        if this.translated_title != null && this.translated_summary != null {
+          root = root.append({
+            "link": this.link,
+            "language_code": "en",
+            "title": this.translated_title,
+            "summary": this.translated_summary
+          })
+        }
+
+    # разбиение массива на отдельные сообщения
+    - unarchive:
+        format: json_array
+
+output:
+  sql_raw:
+    driver: postgres
+    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    query: |
+      INSERT INTO dtl.s_chr_rss_news_texts (
+        news_id, language_code, title_txt, summary_txt
+      ) VALUES (xxh64($1), $2, $3, $4)
+      ON CONFLICT (news_id, language_code) DO NOTHING;
+    args_mapping: |
+      root = [
+        this.link.string().or(""),
+        this.language_code.string().or("unknown"),
+        this.title.string().or(""),
+        this.summary.string().or("")
+      ]
+    batching:
+      count: 5
+      period: 1s
