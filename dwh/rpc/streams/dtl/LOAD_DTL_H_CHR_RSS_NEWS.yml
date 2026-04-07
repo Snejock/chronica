@@ -2,7 +2,7 @@ input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
     topics: ["stg_chr_rss_news"]
-    consumer_group: "pg.dtl_h_chr_rss_news"
+    consumer_group: "LOAD_DTL_H_CHR_RSS_NEWS"
 
 pipeline:
   processors:

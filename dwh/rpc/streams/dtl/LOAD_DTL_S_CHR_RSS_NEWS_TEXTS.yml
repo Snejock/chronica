@@ -2,7 +2,7 @@ input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
     topics: ["stg_chr_rss_news"]
-    consumer_group: "pg.dtl_s_chr_rss_news_texts"
+    consumer_group: "LOAD_DTL_S_CHR_RSS_NEWS_TEXTS"
 
 pipeline:
   processors:
@@ -43,12 +43,12 @@ pipeline:
     # установка флага необходимости перевода
     - mapping: |
         root = this
-        root.is_needs_translation = this.language_code != "en" && this.language_code != null
+        root.is_translation_needed = this.language_code != "en" && this.language_code != null
 
     # выполнение перевода (если необходимо)
     - branch:
         request_map: |
-          root = if this.is_needs_translation {
+          root = if this.is_translation_needed {
             {
               "model": "translategemma:4b",
               "stream": false,
@@ -126,22 +126,45 @@ pipeline:
     - unarchive:
         format: json_array
 
+    # добавление в meta поля key для использования в outputs
+    - mapping: |
+        meta key = this.link.string().or("")
+
 output:
-  sql_raw:
-    driver: postgres
-    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-    query: |
-      INSERT INTO dtl.s_chr_rss_news_texts (
-        news_id, language_code, title_txt, summary_txt
-      ) VALUES (xxh64($1), $2, $3, $4)
-      ON CONFLICT (news_id, language_code) DO NOTHING;
-    args_mapping: |
-      root = [
-        this.link.string().or(""),
-        this.language_code.string().or("unknown"),
-        this.title.string().or(""),
-        this.summary.string().or("")
-      ]
-    batching:
-      count: 5
-      period: 1s
+  broker:
+    pattern: fan_out
+    outputs:
+      - sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dtl.s_chr_rss_news_texts (
+              news_id, language_code, title_txt, summary_txt
+            ) VALUES (xxh64($1), $2, $3, $4)
+            ON CONFLICT (news_id, language_code) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.link.string().or(""),
+              this.language_code.string().or("unknown"),
+              this.title.string().or(""),
+              this.summary.string().or("")
+            ]
+          batching:
+            count: 5
+            period: 1s
+
+      - redpanda:
+          seed_brokers: ["dwh-rp-1:9092"]
+          topic: "dtl_s_chr_rss_news_texts"
+          key: '${! meta("key") }'
+        processors:
+          - mapping: |
+              root.news_link = this.link.string().or("")
+              root.language_code = this.language_code.string().or("unknown")
+              root.title_txt = this.title.string().or("")
+              root.summary_txt = this.summary.string().or("")
+
+          - schema_registry_encode:
+              url: "http://dwh-rp-1:8081"
+              subject: "dtl_s_chr_rss_news_texts-value"
+              avro_raw_json: true
