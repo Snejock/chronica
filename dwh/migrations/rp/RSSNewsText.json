@@ -1,0 +1,24 @@
+{
+  "type": "record",
+  "name": "RSSNewsText",
+  "namespace": "chronica",
+  "fields":[
+    {
+      "name": "news_id",
+      "type": "string"
+    },
+    {
+      "name": "language_code",
+      "type": "string"
+    },
+    {
+      "name": "title_txt",
+      "type": "string"
+    },
+    {
+      "name": "summary_txt",
+      "type": "string",
+      "default": ""
+    }
+  ]
+}
