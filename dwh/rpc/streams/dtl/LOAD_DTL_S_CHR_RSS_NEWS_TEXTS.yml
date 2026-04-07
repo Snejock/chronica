@@ -96,7 +96,7 @@ pipeline:
     - log:
         level: INFO
         message: |
-          ${! "LINK: " + this.link + "ORIGINAL (" + this.language_code.string() + "): " + this.title.string() + "; TRANSLATED (en): " + this.translated_title.string().or("N/A (Skipped)")}
+          ${! "LINK: " + this.link + "; ORIGINAL (" + this.language_code.string() + "): " + this.title.string() + "; TRANSLATED (en): " + this.translated_title.string().or("N/A (Skipped)")}
 
     # формирование массива [оригинал + перевод]
     - mapping: |
