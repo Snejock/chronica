@@ -1,0 +1,77 @@
+input:
+  redpanda:
+    seed_brokers: ["dwh-rp-1:9092"]
+    topics: ["dtl_s_chr_rss_news_texts"]
+    consumer_group: "LOAD_DTL_S_CHR_RSS_NEWS_EMBEDDINGS"
+
+pipeline:
+  processors:
+    - schema_registry_decode:
+        url: "http://dwh-rp-1:8081"
+
+    - dedupe:
+        cache: pg_dtl_s_chr_rss_news_embeddings
+        key: "pg_dtl_s_chr_rss_news_embeddings:news_link:${! this.news_link }"
+
+    # установка флага необходимости векторизации
+    - mapping: |
+        root = this
+        root.is_embedding_needed = this.language_code == "en"
+
+    # получение эмбеддинга
+    - branch:
+        request_map: |
+          root = if this.is_embedding_needed {
+            {
+              "model": "embeddinggemma:latest",
+              "stream": false,
+              "prompt": this.title_txt + " " + this.summary_txt
+            } 
+          } else { deleted() }
+        processors:
+          - http:
+              url: "http://dwh-ol-1:11434/api/embeddings"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+              timeout: 1m
+          - mapping: |
+              root.embedding = this.embedding
+        result_map: |
+          root.embedding = this.embedding
+
+    # логирование результата перевода
+    - mapping: |
+        let status = if this.embedding != null { "✅ EMBEDDED" } else { "⏩ SKIPPED " }
+        let vec_size = if this.embedding != null { this.embedding.length().string() + " dims" } else { "n/a" }
+        let log_id = this.news_id
+        let log_title = this.title_txt
+        
+        meta log_msg = "[%s] ID:%s | %s | Vec:%s | Title: %s".format($status, $log_id, this.language_code, $vec_size, $log_title)
+
+    - log:
+        level: INFO
+        message: '${! meta("log_msg") }'
+
+    # проверка на случай, если получен пустой ответ
+    - mapping: |
+        root = if this.embedding != null { this } else { deleted() }
+
+output:
+  sql_raw:
+    driver: postgres
+    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    query: |
+      INSERT INTO dtl.s_chr_rss_news_embeddings (
+        news_id, model_nm, embedding_vct
+      ) VALUES (xxh64($1), $2, $3)
+      ON CONFLICT (news_id, model_nm) DO NOTHING;
+    args_mapping: |
+      root = [
+        this.link.string().or(""),
+        "embeddinggemma",
+        this.embedding.string()
+      ]
+    batching:
+      count: 5
+      period: 1s
