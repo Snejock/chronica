@@ -52,16 +52,15 @@ pipeline:
             {
               "model": "translategemma:4b",
               "stream": false,
-              "messages": [
-                {
-                  "role": "system",
-                  "content": "You are a professional translator. Translate content to English and return ONLY JSON."
-                },
-                {
-                  "role": "user",
-                  "content": "Title: " + this.title + "\nSummary: " + this.summary
-                }
-              ],
+              "options": {
+                "temperature": 0.0,
+                "top_p": 0.1
+              },
+              "system": "You are a highly skilled professional translator. Your task is to translate ALL text values in the provided JSON object into English. You MUST completely translate BOTH the 'title' and 'summary' into English. NEVER leave any text in the original language. Return ONLY the translated JSON object.",
+              "prompt": {
+                "title": this.title,
+                "summary": this.summary
+              }.string(),
               "format": {
                 "type": "object",
                 "properties": {
@@ -74,13 +73,13 @@ pipeline:
           } else { deleted() }
         processors:
           - http:
-              url: "http://dwh-ol-1:11434/api/chat"
+              url: "http://dwh-ol-1:11434/api/generate"
               verb: POST
               headers:
                 Content-Type: "application/json"
               timeout: 5m
           - mapping: |
-              let result = this.message.content.parse_json()
+              let result = this.response.parse_json()
               root.translated_title = $result.title
               root.translated_summary = $result.summary
         # объединение оригинала и результата перевода
@@ -96,13 +95,13 @@ pipeline:
     - mapping: |
         let is_trans = this.translated_title != null
         let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ SKIPPED   " }
-        let log_id = this.link.string().slice(12)
+        let log_id = this.link.string()
         let lang = this.language_code.string().or("unknown")
-        let log_title = this.title.string().slice(40)
+        let log_title = this.title.string()
         
-        let trans_preview = if $is_trans { this.translated_title.string().slice(40) } else { "----" }
+        let trans_preview = if $is_trans { this.translated_title.string() } else { "----" }
 
-        meta log_msg = "[%s] ID:%s | %s -> EN | Title: %s | Result: %s".format(
+        meta log_msg = "[%s] ID:%s | %s -> en | Title: %s | Result: %s".format(
           $status, $log_id, $lang, $log_title, $trans_preview
         )
 
