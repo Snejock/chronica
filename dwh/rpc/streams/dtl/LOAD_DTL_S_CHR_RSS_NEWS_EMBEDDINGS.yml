@@ -30,7 +30,7 @@ pipeline:
           } else { deleted() }
         processors:
           - http:
-              url: "http://dwh-ol-1:11434/api/embeddings"
+              url: "http://dwh-ol-1:11434/api/embed"
               verb: POST
               headers:
                 Content-Type: "application/json"
@@ -47,7 +47,7 @@ pipeline:
         let log_id = this.news_id
         let log_title = this.title_txt
         
-        meta log_msg = "[%s] ID:%s | %s | Vec:%s | Title: %s".format($status, $log_id, this.language_code, $vec_size, $log_title)
+        meta log_msg = "[%s] ID:%s | %s | Vct:%s | Title: %s".format($status, $log_id, this.language_code, $vec_size, $log_title)
 
     - log:
         level: INFO
