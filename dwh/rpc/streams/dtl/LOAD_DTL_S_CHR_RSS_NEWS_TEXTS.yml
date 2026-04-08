@@ -93,10 +93,22 @@ pipeline:
           # оригинальные поля title и summary при этом не трогаются и остаются в root
 
     # логирование результата перевода
+    - mapping: |
+        let is_trans = this.translated_title != null
+        let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ SKIPPED   " }
+        let log_id = this.link.string().slice(12)
+        let lang = this.language_code.string().or("unknown")
+        let log_title = this.title.string().slice(40)
+        
+        let trans_preview = if $is_trans { this.translated_title.string().slice(40) } else { "----" }
+
+        meta log_msg = "[%s] ID:%s | %s -> EN | Title: %s | Result: %s".format(
+          $status, $log_id, $lang, $log_title, $trans_preview
+        )
+
     - log:
         level: INFO
-        message: |
-          ${! "LINK: " + this.link + "; ORIGINAL (" + this.language_code.string() + "): " + this.title.string() + "; TRANSLATED (en): " + this.translated_title.string().or("N/A (Skipped)")}
+        message: '${! meta("log_msg") }'
 
     # формирование массива [оригинал + перевод]
     - mapping: |
