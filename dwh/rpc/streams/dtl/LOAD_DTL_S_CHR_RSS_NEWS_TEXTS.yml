@@ -94,7 +94,7 @@ pipeline:
     # логирование результата перевода
     - mapping: |
         let is_trans = this.translated_title != null
-        let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ SKIPPED   " }
+        let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ TRANSLATION SKIPPED" }
         let log_id = this.link.string()
         let lang = this.language_code.string().or("unknown")
         let log_title = this.title.string()

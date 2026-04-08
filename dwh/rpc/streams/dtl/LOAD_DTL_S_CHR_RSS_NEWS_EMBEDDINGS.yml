@@ -24,8 +24,12 @@ pipeline:
           root = if this.is_embedding_needed {
             {
               "model": "embeddinggemma:latest",
-              "stream": false,
-              "prompt": this.title_txt + " " + this.summary_txt
+              "input": this.title_txt.or("") + " " + this.summary_txt.or(""),
+              "dimensions": 768,
+              "options": {
+                "temperature": 0.0,
+                "top_p": 0.1
+              }
             } 
           } else { deleted() }
         processors:
@@ -36,15 +40,15 @@ pipeline:
                 Content-Type: "application/json"
               timeout: 1m
           - mapping: |
-              root.embedding = this.embedding
+              root.embedding = this.embeddings.0
         result_map: |
           root.embedding = this.embedding
 
     # логирование результата перевода
     - mapping: |
-        let status = if this.embedding != null { "✅ EMBEDDED" } else { "⏩ SKIPPED " }
+        let status = if this.embedding != null { "✅ EMBEDDED" } else { "⏩ EMBEDDING SKIPPED" }
         let vec_size = if this.embedding != null { this.embedding.length().string() + " dims" } else { "n/a" }
-        let log_id = this.news_id
+        let log_id = this.news_link
         let log_title = this.title_txt
         
         meta log_msg = "[%s] ID:%s | %s | Vct:%s | Title: %s".format($status, $log_id, this.language_code, $vec_size, $log_title)
