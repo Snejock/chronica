@@ -64,11 +64,11 @@ output:
     query: |
       INSERT INTO dtl.s_chr_rss_news_embeddings (
         news_id, model_nm, embedding_vct
-      ) VALUES (xxh64($1), $2, $3)
+      ) VALUES (xxh64($1), $2, $3::vector)
       ON CONFLICT (news_id, model_nm) DO NOTHING;
     args_mapping: |
       root = [
-        this.link.string().or(""),
+        this.news_link.string().or(""),
         "embeddinggemma",
         this.embedding.string()
       ]
