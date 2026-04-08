@@ -11,7 +11,7 @@ pipeline:
 
     - dedupe:
         cache: pg_dtl_s_chr_rss_news_embeddings
-        key: "pg_dtl_s_chr_rss_news_embeddings:news_link:${! this.news_link }"
+        key: "pg_dtl_s_chr_rss_news_embeddings:${! this.news_link }:${! this.language_code }"
 
     # установка флага необходимости векторизации
     - mapping: |
