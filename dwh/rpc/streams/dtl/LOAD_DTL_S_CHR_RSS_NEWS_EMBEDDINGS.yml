@@ -23,7 +23,7 @@ pipeline:
         request_map: |
           root = if this.is_embedding_needed {
             {
-              "model": "embeddinggemma:latest",
+              "model": "embeddinggemma:300m",
               "input": this.title_txt.or("") + " " + this.summary_txt.or(""),
               "dimensions": 768,
               "options": {
@@ -73,7 +73,7 @@ output:
     args_mapping: |
       root = [
         this.news_link.string().or(""),
-        "embeddinggemma",
+        "embeddinggemma:300m",
         this.embedding.string()
       ]
     batching:
