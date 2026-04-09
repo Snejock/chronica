@@ -23,7 +23,7 @@ pipeline:
         request_map: |
           root = if this.is_embedding_needed {
             {
-              "model": "embeddinggemma:300m",
+              "model": "embeddinggemma",
               "input": this.title_txt.or("") + " " + this.summary_txt.or(""),
               "dimensions": 768,
               "options": {
