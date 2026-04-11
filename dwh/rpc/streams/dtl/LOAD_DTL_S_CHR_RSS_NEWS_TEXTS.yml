@@ -43,12 +43,13 @@ pipeline:
     # установка флага необходимости перевода
     - mapping: |
         root = this
-        root.is_translation_needed = this.language_code != "en" && this.language_code != null
+        root.is_en_translation_needed = this.language_code != "en" && this.language_code != null
+        root.is_ru_translation_needed = this.language_code != "ru" && this.language_code != null
 
-    # выполнение перевода (если необходимо)
+    # выполнение перевода на английский (если необходимо)
     - branch:
         request_map: |
-          root = if this.is_translation_needed {
+          root = if this.is_en_translation_needed {
             {
               "model": "translategemma:4b",
               "stream": false,
@@ -87,8 +88,54 @@ pipeline:
           # root - это исходный объект (со всеми полями: id, date, title, summary и т.д.)
           # this - это то, что получилось в конце цепочки processors внутри branch
 
-          root.translated_title = this.translated_title
-          root.translated_summary = this.translated_summary
+          root.translated_title_en = this.translated_title
+          root.translated_summary_en = this.translated_summary
+          # оригинальные поля title и summary при этом не трогаются и остаются в root
+
+    # выполнение перевода на русский (если необходимо)
+    - branch:
+        request_map: |
+          root = if this.is_ru_translation_needed {
+            {
+              "model": "translategemma:4b",
+              "stream": false,
+              "options": {
+                "temperature": 0.0,
+                "top_p": 0.1
+              },
+              "system": "You are a highly skilled professional translator. Your task is to translate ALL text values in the provided JSON object into Russian. You MUST completely translate BOTH the 'title' and 'summary' into Russian. NEVER leave any text in the original language. Return ONLY the translated JSON object.",
+              "prompt": {
+                "title": this.title,
+                "summary": this.summary
+              }.string(),
+              "format": {
+                "type": "object",
+                "properties": {
+                  "title": {"type": "string"},
+                  "summary": {"type": "string"}
+                },
+                "required": ["title", "summary"]
+              }
+            }
+          } else { deleted() }
+        processors:
+          - http:
+              url: "http://dwh-ol-1:11434/api/generate"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+              timeout: 5m
+          - mapping: |
+              let result = this.response.parse_json()
+              root.translated_title = $result.title
+              root.translated_summary = $result.summary
+        # объединение оригинала и результата перевода
+        result_map: |
+          # root - это исходный объект (со всеми полями: id, date, title, summary и т.д.)
+          # this - это то, что получилось в конце цепочки processors внутри branch
+
+          root.translated_title_ru = this.translated_title
+          root.translated_summary_ru = this.translated_summary
           # оригинальные поля title и summary при этом не трогаются и остаются в root
 
     # логирование результата перевода
@@ -123,13 +170,23 @@ pipeline:
           })
         }
 
-        # перевод
-        if this.translated_title != null && this.translated_summary != null {
+        # перевод EN
+        if this.translated_title_en != null && this.translated_summary_en != null {
           root = root.append({
             "link": this.link,
             "language_code": "en",
-            "title": this.translated_title,
-            "summary": this.translated_summary
+            "title": this.translated_title_en,
+            "summary": this.translated_summary_en
+          })
+        }
+        
+        # перевод RU
+        if this.translated_title_ru != null && this.translated_summary_ru != null {
+          root = root.append({
+            "link": this.link,
+            "language_code": "ru",
+            "title": this.translated_title_ru,
+            "summary": this.translated_summary_ru
           })
         }
 
