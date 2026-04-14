@@ -2,7 +2,7 @@
   "type": "record",
   "name": "RSSNewsText",
   "namespace": "chronica",
-  "fields":[
+  "fields": [
     {
       "name": "news_id",
       "type": "string"

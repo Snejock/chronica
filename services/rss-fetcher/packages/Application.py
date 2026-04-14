@@ -73,7 +73,7 @@ class Application:
             await asyncio.gather(
                 self.http_provider.open(),
                 self.pg_provider.open(),
-                self.br_provider.open(schema=self.config.rss_fetcher.schema),
+                self.br_provider.open(schema=self.config.rss_fetcher.schema_nm),
             )
             logger.info("All components have been successfully initialized")
 

@@ -14,6 +14,7 @@ WORKDIR /app
 # Копирование только файлов конфигурации для кэширования слоев
 COPY pyproject.toml uv.lock ./
 COPY common/pyproject.toml ./common/
+COPY dwh/ ./dwh/
 COPY services/rss-fetcher/pyproject.toml ./services/rss-fetcher/
 
 # Устанавка зависимостей
