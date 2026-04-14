@@ -5,7 +5,7 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
 
-from common.schemas import stg_chr_rss_news
+from common.utils.get_schema import get_schema
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +16,14 @@ class BrokerProvider:
         self._producer = None
         self._lock = asyncio.Lock()
 
-    async def open(self) -> None:
+    async def open(self, schema: str) -> None:
         async with self._lock:
             if self._producer is None:
                 try:
-                    schema_registry_url = self.config.schema_registry_url
-                    sr_client = SchemaRegistryClient({'url': schema_registry_url})
+                    sr_client = SchemaRegistryClient({'url': self.config.schema_registry_url})
                     avro_serializer = AvroSerializer(
                         schema_registry_client=sr_client,
-                        schema_str=stg_chr_rss_news,
+                        schema_str=get_schema(schema),
                         conf={'auto.register.schemas': True}
                     )
                     string_serializer = StringSerializer('utf_8')

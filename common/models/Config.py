@@ -7,6 +7,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ENV_PATH = BASE_DIR / "common" / ".env"
 
 
+class RSSFetcherConfig(BaseModel):
+    topic: str = "stg_chr_rss_news"
+    schema: str = "RSSNews"
+
 class BrokerConfig(BaseModel):
     host: str
     port: int
@@ -46,6 +50,7 @@ class Config(BaseSettings):
     postgres: Annotated[PostgresConfig | None, Field(default=None)]
     google_ai: Annotated[GoogleAIConfig | None, Field(default=None)]
     proxy: Annotated[ProxyConfig | None, Field(default=None)]
+    rss_fetcher: Annotated[RSSFetcherConfig | None, Field(default=RSSFetcherConfig())]
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
