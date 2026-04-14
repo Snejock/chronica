@@ -7,3 +7,6 @@ CREATE TABLE IF NOT EXISTS dtl.s_chr_rss_news_embeddings (
     CONSTRAINT s_chr_rss_news_embeddings_pkey
         PRIMARY KEY (news_id, model_nm)
 );
+
+CREATE INDEX idx_news_embeddings_hnsw ON dtl.s_chr_rss_news_embeddings USING hnsw (embedding_vct vector_cosine_ops)
+;

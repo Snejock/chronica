@@ -3,13 +3,11 @@ import logging
 import yaml
 from datetime import datetime, timezone
 
-from models import Config, RSSFeed, RSSFeedList, RSSItem
+from models import Config, RSSFeed, RSSFeedList, RSSNews
 from packages.providers import HttpProvider, PostgresProvider, BrokerProvider
 from packages.parsers import RSSFeedParser
 
 logger = logging.getLogger(__name__)
-
-TOPIC = "stg_chr_rss_news"
 
 
 class Application:
@@ -17,10 +15,9 @@ class Application:
         logger.info("Initialize application...")
         self.config = Config()
         self.feed_list = None
-        self.topic = TOPIC
         self.http_provider = HttpProvider(
             timeout_sec=30,
-            proxy_url=f"socks5://{self.config.proxy.user}:{self.config.proxy.password}@{self.config.proxy.host}:{self.config.proxy.port}"
+            proxy_url=f"http://{self.config.proxy.user}:{self.config.proxy.password}@{self.config.proxy.host}:{self.config.proxy.port}"
         )
         self.pg_provider = PostgresProvider(config=self.config)
         self.br_provider = BrokerProvider(config=self.config)
@@ -40,7 +37,7 @@ class Application:
 
                     for item in item_list:
                         try:
-                            item = RSSItem(**item)
+                            item = RSSNews(**item)
 
                             if item.published_utc > feed.cursor:
                                 item.feed_id = feed.id
@@ -49,7 +46,7 @@ class Application:
                                 # Отправка в брокер
                                 payload = item.model_dump()
                                 payload["published_utc"] = int(item.published_utc.timestamp())
-                                self.br_provider.produce(payload, topic=self.topic)
+                                self.br_provider.produce(payload, topic=self.config.rss_fetcher.topic)
 
                                 if item.published_utc > max_cursor:
                                     max_cursor = item.published_utc
@@ -76,7 +73,7 @@ class Application:
             await asyncio.gather(
                 self.http_provider.open(),
                 self.pg_provider.open(),
-                self.br_provider.open(),
+                self.br_provider.open(schema=self.config.rss_fetcher.schema),
             )
             logger.info("All components have been successfully initialized")
 

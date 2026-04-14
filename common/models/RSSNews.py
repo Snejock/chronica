@@ -5,7 +5,7 @@ from dateutil import parser
 import xxhash
 
 
-class RSSItem(BaseModel):
+class RSSNews(BaseModel):
     source_system:  Annotated[str, Field(default="RSS", description="Код системы источника")]
     published_loc:  Annotated[str, Field(description="Дата и время публикации в исходном формате и таймзоне")]
     feed_id:        Annotated[int | None, Field(default=None)]
