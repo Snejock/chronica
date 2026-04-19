@@ -1,4 +1,4 @@
-INSERT INTO dtl.d_chr_rss_feeds (
+INSERT INTO dtl.d_rss_feeds (
    feed_nm, feed_link, feed_type, country_code, city_nm, language_code, interval_sec, is_active
 ) VALUES
     ('Interfax', 'https://www.interfax.ru/rss', 'independent', 'ru', 'Moscow', 'ru', 60, true),

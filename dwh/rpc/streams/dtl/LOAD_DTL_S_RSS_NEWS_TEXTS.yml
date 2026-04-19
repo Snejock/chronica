@@ -1,25 +1,26 @@
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
-    topics: ["stg_chr_rss_news"]
-    consumer_group: "LOAD_DTL_S_CHR_RSS_NEWS_TEXTS"
+    topics: ["stg_rss_news"]
+    consumer_group: "LOAD_DTL_S_RSS_NEWS_TEXTS"
 
 pipeline:
+  threads: 1
   processors:
     - schema_registry_decode:
         url: "http://dwh-rp-1:8081"
 
     - dedupe:
-        cache: pg_dtl_s_chr_rss_news_texts
-        key: "pg_dtl_s_chr_rss_news_texts:link:${! this.link }"
+        cache: redis_cache
+        key: "pg_dtl_s_rss_news_texts:link:${! this.link }"
 
     # получение из кэша language_code для this.feed_id
     - branch:
         processors:
           - cache:
-              resource: pg_dtl_d_chr_rss_feeds
+              resource: redis_cache
               operator: get
-              key: 'pg_dtl_d_chr_rss_feeds:language_code:${! this.feed_id }'
+              key: 'pg_dtl_d_rss_feeds:language_code:${! this.feed_id }'
         result_map: 'root.language_code = content().string()'
 
     # получение из базы (при отсутствии в кэше) значения language_code для this.feed_id
@@ -30,28 +31,45 @@ pipeline:
           - sql_raw:
               driver: postgres
               dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-              query: "SELECT feed_id, language_code FROM dtl.d_chr_rss_feeds WHERE feed_id = $1"
+              query: "SELECT feed_id, language_code FROM dtl.d_rss_feeds WHERE feed_id = $1"
               args_mapping: "root = [this.feed_id]"
           # добавление значения language_code в кэш
           - cache:
-              resource: pg_dtl_d_chr_rss_feeds
+              resource: redis_cache
               operator: set
-              key: 'pg_dtl_d_chr_rss_feeds:language_code:${! this.0.feed_id }'
+              key: 'pg_dtl_d_rss_feeds:language_code:${! this.0.feed_id }'
               value: '${! this.0.language_code }'
         result_map: 'root.language_code = this.0.language_code.or("unknown")'
+
+    # получение списка уже существующих переводов для этой новости из БД
+    - branch:
+        processors:
+          - sql_raw:
+              driver: postgres
+              dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+              query: "SELECT language_code FROM dtl.s_rss_news_texts WHERE news_id = xxh64($1)"
+              args_mapping: "root = [this.link.string()]"
+        # Сохраняем массив найденных языков (например: ["en", "ru"] или [])
+        result_map: |
+          root.has_translations = this.map_each(this.language_code)
 
     # установка флага необходимости перевода
     - mapping: |
         root = this
-        root.is_en_translation_needed = this.language_code != "en" && this.language_code != null
-        root.is_ru_translation_needed = this.language_code != "ru" && this.language_code != null
+        let translations = this.has_translations.or([])
+        
+        # перевод на EN, если оригинал не EN, язык известен и в БД еще нет перевода 'en'
+        root.is_en_translation_needed = this.language_code != "en" && this.language_code != null && !$translations.contains("en")
+        
+        # перевод на RU, если оригинал не RU, язык известен и в БД еще нет перевода 'ru'
+        root.is_ru_translation_needed = this.language_code != "ru" && this.language_code != null && !$translations.contains("ru")
 
     # выполнение перевода на английский (если необходимо)
     - branch:
         request_map: |
           root = if this.is_en_translation_needed {
             {
-              "model": "translategemma:4b",
+              "model": "gemini-3-flash-preview:latest",
               "stream": false,
               "options": {
                 "temperature": 0.0,
@@ -97,7 +115,7 @@ pipeline:
         request_map: |
           root = if this.is_ru_translation_needed {
             {
-              "model": "translategemma:4b",
+              "model": "gemini-3-flash-preview:latest",
               "stream": false,
               "options": {
                 "temperature": 0.0,
@@ -140,16 +158,26 @@ pipeline:
 
     # логирование результата перевода
     - mapping: |
-        let is_trans = this.translated_title != null
-        let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ TRANSLATION SKIPPED" }
-        let log_id = this.link.string()
+        let trans_en = this.translated_title_en != null
+        let trans_ru = this.translated_title_ru != null
+        let is_trans = $trans_en || $trans_ru
+        let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ SKIPPED" }
+        
+        let link = this.link.string()
         let lang = this.language_code.string().or("unknown")
         let log_title = this.title.string()
         
-        let trans_preview = if $is_trans { this.translated_title.string() } else { "----" }
-
-        meta log_msg = "[%s] ID:%s | %s -> en | Title: %s | Result: %s".format(
-          $status, $log_id, $lang, $log_title, $trans_preview
+        let targets = if $trans_en && $trans_ru { "en,ru" } 
+                      else if $trans_en { "en" } 
+                      else if $trans_ru { "ru" } 
+                      else { "none" }
+        
+        let trans_preview = if $trans_en { this.translated_title_en.string() } 
+                            else if $trans_ru { this.translated_title_ru.string() } 
+                            else { "----" }
+        
+        meta log_msg = "[%s] Link: %s | %s -> %s | Title: %s | Result: %s".format(
+          $status, $link, $lang, $targets, $log_title, $trans_preview
         )
 
     - log:
@@ -206,7 +234,7 @@ output:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dtl.s_chr_rss_news_texts (
+            INSERT INTO dtl.s_rss_news_texts (
               news_id, language_code, title_txt, summary_txt
             ) VALUES (xxh64($1), $2, $3, $4)
             ON CONFLICT (news_id, language_code) DO NOTHING;
@@ -223,7 +251,7 @@ output:
 
       - redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
-          topic: "dtl_s_chr_rss_news_texts"
+          topic: "dtl_s_rss_news_texts"
           key: '${! meta("key") }'
         processors:
           - mapping: |
@@ -234,5 +262,5 @@ output:
 
           - schema_registry_encode:
               url: "http://dwh-rp-1:8081"
-              subject: "dtl_s_chr_rss_news_texts-value"
+              subject: "dtl_s_rss_news_texts-value"
               avro_raw_json: true

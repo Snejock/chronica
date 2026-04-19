@@ -8,7 +8,7 @@ ENV_PATH = BASE_DIR / "common" / ".env"
 
 
 class RSSFetcherConfig(BaseModel):
-    topic: str = "stg_chr_rss_news"
+    topic: str = "stg_rss_news"
     schema_nm: str = "RSSNews"
 
 class BrokerConfig(BaseModel):

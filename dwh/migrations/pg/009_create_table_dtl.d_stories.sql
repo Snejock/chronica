@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS dtl.d_chr_stories (
+CREATE TABLE IF NOT EXISTS dtl.d_stories (
     _loaded_dttm    timestamp(0) DEFAULT now(),
     story_id        integer,
     story_nm        text,
@@ -7,6 +7,6 @@ CREATE TABLE IF NOT EXISTS dtl.d_chr_stories (
     embedding_vct   vector(768),
     is_active       boolean,
 
-    CONSTRAINT d_chr_stories_pkey
+    CONSTRAINT d_stories_pkey
         PRIMARY KEY (story_id, storyline_txt, model_nm)
 );

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS dtl.d_chr_rss_feeds (
+CREATE TABLE IF NOT EXISTS dtl.d_rss_feeds (
     _loaded_dttm    timestamp(0) DEFAULT now(),
     feed_id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     feed_nm         text,

@@ -121,7 +121,7 @@ class Application:
                     language_code,
                     interval_sec AS interval,
                     is_active
-                FROM dtl.d_chr_rss_feeds 
+                FROM dtl.d_rss_feeds 
                 WHERE is_active = true;
             """)
 
@@ -151,7 +151,7 @@ class Application:
                 result = await self.pg_provider.fetch(
                     """
                         SELECT max(published_utc)
-                        FROM stg.chr_rss_news
+                        FROM stg.rss_news
                         WHERE feed_id = $1
                     """,
                     feed.id

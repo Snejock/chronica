@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS stg.chr_rss_news (
+CREATE TABLE IF NOT EXISTS stg.rss_news (
     _loaded_dttm   timestamp(0) default now(),
     _source_system text,
     published_utc  timestamp(0),
