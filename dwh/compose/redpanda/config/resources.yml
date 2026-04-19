@@ -1,0 +1,6 @@
+# /etc/redpanda-connect/resources.yml
+cache_resources:
+  - label: redis_cache
+    redis:
+      url: redis://dwh-rd-1:6379
+      default_ttl: 24h
