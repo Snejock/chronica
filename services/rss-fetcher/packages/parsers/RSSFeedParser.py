@@ -14,7 +14,7 @@ class RSSFeedParser:
                     "published_loc": getattr(entry, "published", None),
                     "title": self._clean(getattr(entry, "title", "")),
                     "summary": self._clean(getattr(entry, "summary", "")),
-                    "link": getattr(entry, "link", ""),
+                    "link": getattr(entry, "link", "").removeprefix("https://").removeprefix("http://").removeprefix("www."),
                 }
             )
         return item_list
