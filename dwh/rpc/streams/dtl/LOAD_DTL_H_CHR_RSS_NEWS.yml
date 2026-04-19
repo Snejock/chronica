@@ -10,7 +10,7 @@ pipeline:
         url: "http://dwh-rp-1:8081"
 
     - dedupe:
-        cache: pg_dtl_h_chr_rss_news
+        cache: redis_cache
         key: "pg_dtl_h_chr_rss_news:link:${! this.link }"
 
 output:
@@ -38,5 +38,5 @@ output:
         this.feed_id.number().or(0)
       ]
     batching:
-      count: 10
+      count: 1
       period: 1s
