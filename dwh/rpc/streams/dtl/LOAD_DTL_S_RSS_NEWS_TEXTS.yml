@@ -12,7 +12,7 @@ pipeline:
 
     - dedupe:
         cache: redis_cache
-        key: "pg_dtl_s_rss_news_texts:link:${! this.link }"
+        key: "dedupe:dtl.s_rss_news_texts:link:${! this.link }"
 
     # получение из кэша language_code для this.feed_id
     - branch:
@@ -20,7 +20,7 @@ pipeline:
           - cache:
               resource: redis_cache
               operator: get
-              key: 'pg_dtl_d_rss_feeds:language_code:${! this.feed_id }'
+              key: "lookup:dtl.d_rss_feeds:${! this.feed_id }:language_code"
         result_map: 'root.language_code = content().string()'
 
     # получение из базы (при отсутствии в кэше) значения language_code для this.feed_id
@@ -37,7 +37,7 @@ pipeline:
           - cache:
               resource: redis_cache
               operator: set
-              key: 'pg_dtl_d_rss_feeds:language_code:${! this.0.feed_id }'
+              key: "lookup:dtl.d_rss_feeds:${! this.feed_id }:language_code"
               value: '${! this.0.language_code }'
         result_map: 'root.language_code = this.0.language_code.or("unknown")'
 
@@ -69,7 +69,7 @@ pipeline:
         request_map: |
           root = if this.is_en_translation_needed {
             {
-              "model": "gemini-3-flash-preview:latest",
+              "model": "deepseek-v3.2:cloud",
               "stream": false,
               "options": {
                 "temperature": 0.0,
@@ -115,7 +115,7 @@ pipeline:
         request_map: |
           root = if this.is_ru_translation_needed {
             {
-              "model": "gemini-3-flash-preview:latest",
+              "model": "deepseek-v3.2:cloud",
               "stream": false,
               "options": {
                 "temperature": 0.0,

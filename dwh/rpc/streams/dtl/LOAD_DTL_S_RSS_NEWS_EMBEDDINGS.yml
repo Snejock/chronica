@@ -12,7 +12,7 @@ pipeline:
 
     - dedupe:
         cache: redis_cache
-        key: "pg_dtl_s_rss_news_embeddings:${! this.news_link }:${! this.language_code }"
+        key: "dedupe:dtl.s_rss_news_embeddings:${! this.news_link }:${! this.language_code }"
 
     # установка флага необходимости векторизации
     - mapping: |
