@@ -11,7 +11,7 @@ pipeline:
 
     - dedupe:
         cache: redis_cache
-        key: "pg_stg_rss_news:link:${! this.link }"
+        key: "dedupe:stg.rss_news:link:${! this.link }"
 
 output:
   sql_raw:
@@ -35,5 +35,5 @@ output:
         this.link.string().or("")
       ]
     batching:
-      count: 10
+      count: 100
       period: 1s
