@@ -52,7 +52,7 @@ pipeline:
         let log_id = this.news_link
         let log_title = this.title_txt
         
-        meta log_msg = "[%s] ID:%s | %s | Vct:%s | Title: %s".format($status, $log_id, this.language_code, $vec_size, $log_title)
+        meta log_msg = "[%s] Link:%s | %s | Vct:%s | Title: %s".format($status, $log_id, this.language_code, $vec_size, $log_title)
 
     - log:
         level: INFO
