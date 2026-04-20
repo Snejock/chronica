@@ -11,7 +11,7 @@ pipeline:
 
     - dedupe:
         cache: redis_cache
-        key: "dedupe:dtl.h_rss_news:link:${! this.link }"
+        key: "dedupe:dtl.h_rss_news:${! this.link }"
 
 output:
   sql_raw:

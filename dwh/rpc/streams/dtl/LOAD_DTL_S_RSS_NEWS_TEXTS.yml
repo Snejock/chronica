@@ -12,7 +12,7 @@ pipeline:
 
     - dedupe:
         cache: redis_cache
-        key: "dedupe:dtl.s_rss_news_texts:link:${! this.link }"
+        key: "dedupe:dtl.s_rss_news_texts:${! this.link }"
 
     # получение из кэша language_code для this.feed_id
     - branch:
@@ -37,7 +37,7 @@ pipeline:
           - cache:
               resource: redis_cache
               operator: set
-              key: "lookup:dtl.d_rss_feeds:${! this.feed_id }:language_code"
+              key: "lookup:dtl.d_rss_feeds:${! this.0.feed_id }"
               value: '${! this.0.language_code }'
         result_map: 'root.language_code = this.0.language_code.or("unknown")'
 
