@@ -6,6 +6,7 @@ include:
   - dwh/compose/redis/docker-compose.yml
   - dwh/compose/redpanda/docker-compose.yml
   - dwh/compose/ollama/docker-compose.yml
+  - dwh/compose/evidence/docker-compose.yml
 
 networks:
   dwh-net:

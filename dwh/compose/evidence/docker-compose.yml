@@ -1,0 +1,18 @@
+services:
+  dwh-evidence:
+    build: .
+    container_name: dwh-evidence
+    restart: unless-stopped
+    networks:
+      - dwh-net
+    ports:
+      - "33000:3000"
+    env_file:
+      - ../../../.env
+    volumes:
+      - ../../dbt/reports/pages:/evidence/pages
+      - ../../dbt/reports/sources:/evidence/sources
+      - ../../dbt/reports/evidence.config.yaml:/evidence/evidence.config.yaml
+      - ../../dbt/reports/package.json:/evidence/package.json
+      - ../../dbt/reports/package-lock.json:/evidence/package-lock.json
+    # command: ["--init"]  # инициализация проекта при первом запуске
