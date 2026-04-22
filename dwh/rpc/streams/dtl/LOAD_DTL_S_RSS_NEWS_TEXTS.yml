@@ -69,7 +69,7 @@ pipeline:
         request_map: |
           root = if this.is_en_translation_needed {
             {
-              "model": "qwen3.5:397b-cloud",
+              "model": "deepseek-v3.2:cloud",
               "stream": false,
               "options": {
                 "temperature": 0.0,
@@ -115,7 +115,7 @@ pipeline:
         request_map: |
           root = if this.is_ru_translation_needed {
             {
-              "model": "qwen3.5:397b-cloud",
+              "model": "deepseek-v3.2:cloud",
               "stream": false,
               "options": {
                 "temperature": 0.0,
