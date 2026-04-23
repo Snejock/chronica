@@ -1,7 +1,7 @@
 services:
-  dbt:
+  dwh-dbt:
     build: .
-    container_name: dwh_dbt
+    container_name: dwh-dbt
     restart: unless-stopped
     networks:
       - dwh-net
