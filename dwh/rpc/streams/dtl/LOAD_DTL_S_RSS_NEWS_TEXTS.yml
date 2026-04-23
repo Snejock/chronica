@@ -161,7 +161,7 @@ pipeline:
         let trans_en = this.translated_title_en != null
         let trans_ru = this.translated_title_ru != null
         let is_trans = $trans_en || $trans_ru
-        let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ SKIPPED" }
+        let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ TRANSLATE SKIPPED" }
         
         let link = this.link.string()
         let lang = this.language_code.string().or("unknown")
