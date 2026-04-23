@@ -6,9 +6,15 @@ RUN apt-get update && apt-get install -y \
     npm install -g degit && \
     mkdir -p ${WORKSPACE_DIR} && \
     mkdir -p /evidence-bin && \
+    chown -R 1000:1000 ${WORKSPACE_DIR} && \
+    chown -R 1000:1000 /evidence-bin && \
     rm -rf /var/lib/apt/lists/*
 
-COPY bootstrap.sh /evidence-bin/bootstrap.sh
+COPY --chown=1000:1000 bootstrap.sh /evidence-bin/bootstrap.sh
+RUN chmod +x /evidence-bin/bootstrap.sh
+
 WORKDIR ${WORKSPACE_DIR}
+
+USER 1000
 
 ENTRYPOINT [ "bash", "/evidence-bin/bootstrap.sh" ]

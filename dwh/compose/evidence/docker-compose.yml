@@ -9,10 +9,13 @@ services:
       - "33000:3000"
     env_file:
       - ../../../.env
+    environment:
+      - CHOKIDAR_USEPOLLING=true  # отслеживает изменения файлов
     volumes:
-      - ../../dbt/reports/pages:/evidence/pages
-      - ../../dbt/reports/sources:/evidence/sources
-      - ../../dbt/reports/evidence.config.yaml:/evidence/evidence.config.yaml
-      - ../../dbt/reports/package.json:/evidence/package.json
-      - ../../dbt/reports/package-lock.json:/evidence/package-lock.json
+      - ../../evidence/pages:/evidence/pages
+      - ../../evidence/sources:/evidence/sources
+      - ../../evidence/queries:/evidence/queries
+      - ../../evidence/evidence.config.yaml:/evidence/evidence.config.yaml
+      - ../../evidence/package.json:/evidence/package.json
+      - ../../evidence/package-lock.json:/evidence/package-lock.json
     # command: ["--init"]  # инициализация проекта при первом запуске
