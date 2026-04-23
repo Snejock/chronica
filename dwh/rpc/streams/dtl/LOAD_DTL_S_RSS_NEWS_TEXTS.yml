@@ -12,21 +12,22 @@ pipeline:
 
     - dedupe:
         cache: redis_cache
-        key: "dedupe:dtl.s_rss_news_texts:${! this.link }"
+        key: "dedupe:dtl.s_rss_news_texts:${! this.link.string() }"
 
     # получение из кэша language_code для this.feed_id
     - branch:
         processors:
-          - cache:
-              resource: redis_cache
-              operator: get
-              key: "lookup:dtl.d_rss_feeds:${! this.feed_id }:language_code"
-        result_map: 'root.language_code = content().string()'
+          - try:
+            - cache:
+                resource: redis_cache
+                operator: get
+                key: "lookup:dtl.d_rss_feeds:${! this.feed_id }"
+        result_map: 'root.language_code = content().string().catch("")'
 
     # получение из базы (при отсутствии в кэше) значения language_code для this.feed_id
     - branch:
         request_map: |
-          root = if this.language_code == null || this.language_code == "" {this} else { deleted() }
+          root = if this.language_code == null || this.language_code == "" { this } else { deleted() }
         processors:
           - sql_raw:
               driver: postgres
@@ -34,12 +35,17 @@ pipeline:
               query: "SELECT feed_id, language_code FROM dtl.d_rss_feeds WHERE feed_id = $1"
               args_mapping: "root = [this.feed_id]"
           # добавление значения language_code в кэш
-          - cache:
-              resource: redis_cache
-              operator: set
-              key: "lookup:dtl.d_rss_feeds:${! this.0.feed_id }"
-              value: '${! this.0.language_code }'
-        result_map: 'root.language_code = this.0.language_code.or("unknown")'
+          - branch:
+              request_map: |
+                root = if this.length() > 0 { this } else { deleted() }
+              processors:
+                - cache:
+                    resource: redis_cache
+                    operator: set
+                    key: 'lookup:dtl.d_rss_feeds:${! this.index(0).feed_id.string() }'
+                    value: '${! this.index(0).language_code.string() }'
+
+        result_map: 'root.language_code = this.index(0).language_code.catch("unknown")'
 
     # получение списка уже существующих переводов для этой новости из БД
     - branch:
@@ -51,7 +57,7 @@ pipeline:
               args_mapping: "root = [this.link.string()]"
         # Сохраняем массив найденных языков (например: ["en", "ru"] или [])
         result_map: |
-          root.has_translations = this.map_each(this.language_code)
+          root.has_translations = this.map_each(item -> item.language_code).catch([])
 
     # установка флага необходимости перевода
     - mapping: |
@@ -91,16 +97,17 @@ pipeline:
             }
           } else { deleted() }
         processors:
-          - http:
-              url: "http://dwh-ol-1:11434/api/generate"
-              verb: POST
-              headers:
-                Content-Type: "application/json"
-              timeout: 5m
+          - try:
+            - http:
+                url: "http://dwh-ol-1:11434/api/generate"
+                verb: POST
+                headers:
+                  Content-Type: "application/json"
+                timeout: 5m
           - mapping: |
-              let result = this.response.parse_json()
-              root.translated_title = $result.title
-              root.translated_summary = $result.summary
+              let result = this.response.parse_json().catch(null)
+              root.translated_title = if $result != null { $result.title } else { null }
+              root.translated_summary = if $result != null { $result.summary } else { null }
         # объединение оригинала и результата перевода
         result_map: |
           # root - это исходный объект (со всеми полями: id, date, title, summary и т.д.)
@@ -137,16 +144,17 @@ pipeline:
             }
           } else { deleted() }
         processors:
-          - http:
-              url: "http://dwh-ol-1:11434/api/generate"
-              verb: POST
-              headers:
-                Content-Type: "application/json"
-              timeout: 5m
+          - try:
+            - http:
+                url: "http://dwh-ol-1:11434/api/generate"
+                verb: POST
+                headers:
+                  Content-Type: "application/json"
+                timeout: 5m
           - mapping: |
-              let result = this.response.parse_json()
-              root.translated_title = $result.title
-              root.translated_summary = $result.summary
+              let result = this.response.parse_json().catch(null)
+              root.translated_title = if $result != null { $result.title } else { null }
+              root.translated_summary = if $result != null { $result.summary } else { null }
         # объединение оригинала и результата перевода
         result_map: |
           # root - это исходный объект (со всеми полями: id, date, title, summary и т.д.)
