@@ -1,0 +1,178 @@
+input:
+  generate:
+    interval: "20m"
+    mapping: 'root = {}'
+
+pipeline:
+  threads: 1
+  processors:
+    # 1. Запрос в БД для поиска новостей без перевода.
+    # ВАЖНО: Замените 'stg.rss_news' на реальную таблицу, откуда можно взять сырой link
+    - sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          WITH news AS (SELECT
+                  news_id
+                  , min(language_code) AS language_code
+                  , min(title_txt) AS title_txt
+                  , min(summary_txt) AS summary_txt
+                  , count(*) AS cnt
+              FROM dtl.s_rss_news_texts
+              GROUP BY news_id
+              HAVING count(*) = 1)
+          SELECT
+              n.news_id
+              , h.news_link AS link
+              , n.language_code
+              , n.title_txt AS title
+              , n.summary_txt AS summary
+          FROM news n
+          JOIN dtl.h_rss_news h ON n.news_id = h.news_id
+          LIMIT 50
+
+    # unarchive разбивает этот массив на отдельные сообщения.
+    - unarchive:
+        format: json_array
+
+    # 3. Установка флагов перевода
+    - mapping: |
+        root = this
+        root.is_ru_translation_needed = this.language_code != "ru"
+        root.is_en_translation_needed = this.language_code != "en"
+
+    # выполнение перевода на английский (если необходимо)
+    - branch:
+        request_map: |
+          root = if this.is_en_translation_needed {
+            {
+              "model": "deepseek-v3.2:cloud",
+              "stream": false,
+              "options": {"temperature": 0.0, "top_p": 0.1},
+              "system": "You are a highly skilled professional translator. Translate ALL text values into English. Return ONLY the translated JSON.",
+              "prompt": {"title": this.title, "summary": this.summary}.string(),
+              "format": { "type": "object", "properties": { "title": {"type": "string"}, "summary": {"type": "string"} }, "required": ["title", "summary"] }
+            }
+          } else { deleted() }
+        processors:
+          - try:
+            - http:
+                url: "http://dwh-ol-1:11434/api/generate"
+                verb: POST
+                headers: { Content-Type: "application/json" }
+                timeout: 5m
+          - mapping: |
+              let result = this.response.parse_json().catch(null)
+              root.translated_title_en = if $result != null { $result.title } else { null }
+              root.translated_summary_en = if $result != null { $result.summary } else { null }
+        result_map: |
+          root.translated_title_en = this.translated_title_en
+          root.translated_summary_en = this.translated_summary_en
+
+    # выполнение перевода на русский (если необходимо)
+    - branch:
+        request_map: |
+          root = if this.is_ru_translation_needed {
+            {
+              "model": "deepseek-v3.2:cloud",
+              "stream": false,
+              "options": {"temperature": 0.0, "top_p": 0.1},
+              "system": "You are a highly skilled professional translator. Translate ALL text values into Russian. Return ONLY the translated JSON.",
+              "prompt": {"title": this.title, "summary": this.summary}.string(),
+              "format": { "type": "object", "properties": { "title": {"type": "string"}, "summary": {"type": "string"} }, "required": ["title", "summary"] }
+            }
+          } else { deleted() }
+        processors:
+          - try:
+            - http:
+                url: "http://dwh-ol-1:11434/api/generate"
+                verb: POST
+                headers: { Content-Type: "application/json" }
+                timeout: 5m
+          - mapping: |
+              let result = this.response.parse_json().catch(null)
+              root.translated_title_ru = if $result != null { $result.title } else { null }
+              root.translated_summary_ru = if $result != null { $result.summary } else { null }
+        result_map: |
+          root.translated_title_ru = this.translated_title_ru
+          root.translated_summary_ru = this.translated_summary_ru
+
+    - mapping: |
+        let link = this.link.string().or("unknown")
+        
+        let status = if this.translated_title_en != null || this.translated_title_ru != null { 
+          "✅ BACKFILL TRANSLATE SUCCESSFULLY" 
+        } else { 
+          "❌ BACKFILL TRANSLATE FAILED" 
+        }
+        
+        let dir = if this.is_en_translation_needed { "ru -> en" } else { "en -> ru" }
+        meta log_msg = "[%s] %s | Link: %s".format($status, $dir, $link)
+
+    - log:
+        level: INFO
+        message: '${! meta("log_msg") }'
+
+    - mapping: |
+        if this.translated_title_en != null {
+          root.link = this.link
+          root.language_code = "en"
+          root.title = this.translated_title_en
+          root.summary = this.translated_summary_en
+        } else if this.translated_title_ru != null {
+          root.link = this.link
+          root.language_code = "ru"
+          root.title = this.translated_title_ru
+          root.summary = this.translated_summary_ru
+        } else {
+          root = deleted()
+        }
+
+    # Добавляем ключ для Kafka
+    - mapping: |
+        meta key = this.link.string().or("")
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dtl.s_rss_news_texts (
+              news_id, language_code, title_txt, summary_txt
+            ) VALUES (xxh64($1), $2, $3, $4)
+            ON CONFLICT (news_id, language_code) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.link.string().or(""),
+              this.language_code.string().or("unknown"),
+              this.title.string().or(""),
+              this.summary.string().or("")
+            ]
+          batching:
+            count: 5
+            period: 1s
+
+      - redpanda:
+          seed_brokers: ["dwh-rp-1:9092"]
+          topic: "dtl_s_rss_news_texts"
+          key: '${! meta("key") }'
+        processors:
+          - mapping: |
+              root.news_link = this.link.string().or("")
+              root.language_code = this.language_code.string().or("unknown")
+              root.title_txt = this.title.string().or("")
+              root.summary_txt = this.summary.string().or("")
+
+          # Добавлен try/catch для отслеживания ошибок реестра схем
+          - try:
+            - schema_registry_encode:
+                url: "http://dwh-rp-1:8081"
+                subject: "dtl_s_rss_news_texts-value"
+                avro_raw_json: true
+          - catch:
+            - log:
+                level: ERROR
+                message: "❌ AVRO ENCODE FAILED: ${! error() }"
