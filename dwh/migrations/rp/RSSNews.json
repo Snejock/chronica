@@ -1,6 +1,6 @@
 {
   "type": "record",
-  "name": "RSSItem",
+  "name": "RSSNews",
   "namespace": "chronica",
   "fields": [
     {
