@@ -12,6 +12,7 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=true  # отслеживает изменения файлов
     volumes:
+      - ../../evidence/build:/evidence/build
       - ../../evidence/pages:/evidence/pages
       - ../../evidence/sources:/evidence/sources
       - ../../evidence/queries:/evidence/queries
