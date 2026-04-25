@@ -46,7 +46,7 @@ pipeline:
         request_map: |
           root = if this.is_en_translation_needed {
             {
-              "model": "deepseek-v3.2:cloud",
+              "model": "deepseek-v4-flash:cloud",
               "stream": false,
               "options": {"temperature": 0.0, "top_p": 0.1},
               "system": "You are a highly skilled professional translator. Translate ALL text values into English. Return ONLY the translated JSON.",
@@ -74,7 +74,7 @@ pipeline:
         request_map: |
           root = if this.is_ru_translation_needed {
             {
-              "model": "deepseek-v3.2:cloud",
+              "model": "deepseek-v4-flash:cloud",
               "stream": false,
               "options": {"temperature": 0.0, "top_p": 0.1},
               "system": "You are a highly skilled professional translator. Translate ALL text values into Russian. Return ONLY the translated JSON.",
