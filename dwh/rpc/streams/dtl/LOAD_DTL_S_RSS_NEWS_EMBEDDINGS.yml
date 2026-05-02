@@ -9,30 +9,58 @@ pipeline:
   processors:
     - schema_registry_decode:
         url: "http://dwh-rp-1:8081"
+    - catch:
+        - log:
+            level: ERROR
+            message: "Error decoding avro: ${! error() }"
 
-    - dedupe:
-        cache: redis_cache
-        key: "dedupe:dtl.s_rss_news_embeddings:${! this.news_link }:${! this.language_code }"
+    # выполнение проверки, была ли новость обработана ранее
+    - branch:
+        processors:
+          - cache:
+              resource: redis_cache
+              operator: get
+              key: "processed:dtl.s_rss_news_embeddings:${! this.news_link }:${! this.language_code.string().or(\"unknown\") }"
+        # если ключ найден, cache заменит payload, branch завершится успешно
+        # если не найден, branch упадет, result_map будет пропущен
+        result_map: 'meta is_processed = "true"'
 
-    # установка флага необходимости векторизации
     - mapping: |
-        root = this
-        root.is_embedding_needed = this.language_code == "en"
+        root = if meta("is_processed") == "true" { deleted() } else { this }
+
+    # удаление, если новость не на английском языке
+    - mapping: |
+        root = if this.language_code != "en" { deleted() } else { this }
+
+    # выполнение проверки, есть ли эмбеддинг новости в БД
+    - branch:
+        processors:
+          - sql_raw:
+              driver: postgres
+              dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+              query: |
+                SELECT 1 FROM dtl.s_rss_news_embeddings 
+                WHERE news_id = xxh64($1) AND model_nm = $2
+              args_mapping: |
+                root = [
+                  this.news_link.string().or(""),
+                  "embeddinggemma:300m"
+                ]
+        result_map: 'meta is_processed = this.length() > 0'
+
+    # удаление, если такая запись уже есть в БД
+    - mapping: |
+        root = if meta("is_processed") == true { deleted() } else { this }
 
     # получение эмбеддинга
     - branch:
         request_map: |
-          root = if this.is_embedding_needed {
-            {
-              "model": "embeddinggemma",
-              "input": this.title_txt.or("") + " " + this.summary_txt.or(""),
-              "dimensions": 768,
-              "options": {
-                "temperature": 0.0,
-                "top_p": 0.1
-              }
-            } 
-          } else { deleted() }
+          root = {
+            "model": "embeddinggemma:300m",
+            "input": this.title_txt.or("") + " " + this.summary_txt.or(""),
+            "dimensions": 768,
+            "options": {"temperature": 0.0, "top_p": 0.1}
+          }
         processors:
           - http:
               url: "http://dwh-ol-1:11434/api/embed"
@@ -47,36 +75,43 @@ pipeline:
 
     # логирование результата перевода
     - mapping: |
-        let status = if this.embedding != null { "✅ EMBEDDED" } else { "⏩ EMBEDDING SKIPPED" }
-        let vec_size = if this.embedding != null { this.embedding.length().string() + " dims" } else { "n/a" }
-        let log_id = this.news_link
-        let log_title = this.title_txt
-        
-        meta log_msg = "[%s] Link:%s | %s | Vct:%s | Title: %s".format($status, $log_id, this.language_code, $vec_size, $log_title)
+        root = if this.embedding == null { 
+          throw("Failed to get embedding") 
+        } else { 
+          this 
+        }
+       
+        let vec_size = this.embedding.length().string() + " dims"
+        meta log_msg = "[✅ EMBEDDED] Link: %s | %s | Vct: %s | Title: %s".format(
+          this.news_link.string(), this.language_code.string(), $vec_size, this.title_txt.string()
+        )
 
     - log:
         level: INFO
         message: '${! meta("log_msg") }'
 
-    # проверка на случай, если получен пустой ответ
-    - mapping: |
-        root = if this.embedding != null { this } else { deleted() }
-
 output:
-  sql_raw:
-    driver: postgres
-    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-    query: |
-      INSERT INTO dtl.s_rss_news_embeddings (
-        news_id, model_nm, embedding_vct
-      ) VALUES (xxh64($1), $2, $3::vector)
-      ON CONFLICT (news_id, model_nm) DO NOTHING;
-    args_mapping: |
-      root = [
-        this.news_link.string().or(""),
-        "embeddinggemma:300m",
-        this.embedding.string()
-      ]
-    batching:
-      count: 5
-      period: 1s
+  broker:
+    pattern: fan_out
+    outputs:
+      - sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dtl.s_rss_news_embeddings (
+              news_id, model_nm, embedding_vct
+            ) VALUES (xxh64($1), $2, $3::vector)
+            ON CONFLICT (news_id, model_nm) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.news_link.string().or(""),
+              "embeddinggemma:300m",
+              this.embedding.string()
+            ]
+          batching:
+            count: 5
+            period: 1s
+
+      - cache:
+          target: redis_cache
+          key: "processed:dtl.s_rss_news_embeddings:${! this.news_link }:${! this.language_code.string().or(\"unknown\") }"

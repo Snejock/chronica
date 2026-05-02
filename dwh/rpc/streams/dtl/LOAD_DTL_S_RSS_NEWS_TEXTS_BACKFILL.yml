@@ -4,7 +4,6 @@ input:
     mapping: 'root = {}'
 
 pipeline:
-  threads: 1
   processors:
     # 1. Запрос в БД для поиска новостей без перевода.
     # ВАЖНО: Замените 'stg.rss_news' на реальную таблицу, откуда можно взять сырой link
@@ -12,23 +11,44 @@ pipeline:
         driver: postgres
         dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
-          WITH news AS (SELECT
-                  news_id
-                  , min(language_code) AS language_code
-                  , min(title_txt) AS title_txt
-                  , min(summary_txt) AS summary_txt
-                  , count(*) AS cnt
-              FROM dtl.s_rss_news_texts
-              GROUP BY news_id
-              HAVING count(*) = 1)
+          WITH
+            news AS (
+                SELECT
+                    news_id
+                    , min(language_code) AS language_code
+                    , min(title_txt) AS title_txt
+                    , min(summary_txt) AS summary_txt
+                    , count(*) AS cnt
+                FROM dtl.s_rss_news_texts
+                GROUP BY news_id
+                HAVING count(*) = 1)
+          -- новости с одним переводом
           SELECT
-              n.news_id
-              , h.news_link AS link
-              , n.language_code
-              , n.title_txt AS title
-              , n.summary_txt AS summary
+              n.news_id           AS news_id
+              , h.news_link       AS link
+              , n.language_code   AS language_code
+              , n.title_txt       AS title
+              , n.summary_txt     AS summary
           FROM news n
           JOIN dtl.h_rss_news h ON n.news_id = h.news_id
+          UNION ALL
+          -- новости без перевода
+          SELECT
+              news_id
+              , link
+              , d.language_code
+              , title
+              , summary
+          FROM (SELECT xxh64(stg.link) AS news_id
+                     , stg.link        AS link
+                     , stg.feed_id     AS feed_id
+                     , stg.title       AS title
+                     , stg.summary     AS summary
+                FROM stg.rss_news stg
+                WHERE NOT EXISTS (SELECT 1
+                                  FROM dtl.s_rss_news_texts s
+                                  WHERE xxh64(stg.link) = s.news_id)) AS t
+          LEFT JOIN dtl.d_rss_feeds d ON t.feed_id = d.feed_id
           LIMIT 50
 
     # unarchive разбивает этот массив на отдельные сообщения.
@@ -51,23 +71,23 @@ pipeline:
               "options": {"temperature": 0.0, "top_p": 0.1},
               "system": "You are a highly skilled professional translator. Translate ALL text values into English. Return ONLY the translated JSON.",
               "prompt": {"title": this.title, "summary": this.summary}.string(),
-              "format": { "type": "object", "properties": { "title": {"type": "string"}, "summary": {"type": "string"} }, "required": ["title", "summary"] }
+              "format": {"type": "object", "properties": {"title": {"type": "string"}, "summary": {"type": "string"}}, "required": ["title", "summary"]}
             }
           } else { deleted() }
         processors:
           - try:
-            - http:
-                url: "http://dwh-ol-1:11434/api/generate"
-                verb: POST
-                headers: { Content-Type: "application/json" }
-                timeout: 5m
+              - http:
+                  url: "http://dwh-ol-1:11434/api/generate"
+                  verb: POST
+                  headers: {Content-Type: "application/json"}
+                  timeout: 5m
           - mapping: |
               let result = this.response.parse_json().catch(null)
-              root.translated_title_en = if $result != null { $result.title } else { null }
-              root.translated_summary_en = if $result != null { $result.summary } else { null }
+              root.translated_title = if $result != null { $result.title } else { null }
+              root.translated_summary = if $result != null { $result.summary } else { null }
         result_map: |
-          root.translated_title_en = this.translated_title_en
-          root.translated_summary_en = this.translated_summary_en
+          root.translated_title_en = this.translated_title
+          root.translated_summary_en = this.translated_summary
 
     # выполнение перевода на русский (если необходимо)
     - branch:
@@ -79,7 +99,7 @@ pipeline:
               "options": {"temperature": 0.0, "top_p": 0.1},
               "system": "You are a highly skilled professional translator. Translate ALL text values into Russian. Return ONLY the translated JSON.",
               "prompt": {"title": this.title, "summary": this.summary}.string(),
-              "format": { "type": "object", "properties": { "title": {"type": "string"}, "summary": {"type": "string"} }, "required": ["title", "summary"] }
+              "format": {"type": "object", "properties": {"title": {"type": "string"}, "summary": {"type": "string"}}, "required": ["title", "summary"]}
             }
           } else { deleted() }
         processors:
@@ -91,11 +111,11 @@ pipeline:
                 timeout: 5m
           - mapping: |
               let result = this.response.parse_json().catch(null)
-              root.translated_title_ru = if $result != null { $result.title } else { null }
-              root.translated_summary_ru = if $result != null { $result.summary } else { null }
+              root.translated_title = if $result != null { $result.title } else { null }
+              root.translated_summary = if $result != null { $result.summary } else { null }
         result_map: |
-          root.translated_title_ru = this.translated_title_ru
-          root.translated_summary_ru = this.translated_summary_ru
+          root.translated_title_ru = this.translated_title
+          root.translated_summary_ru = this.translated_summary
 
     - mapping: |
         let link = this.link.string().or("unknown")

@@ -1,0 +1,83 @@
+input:
+  generate:
+    interval: "20m"
+    mapping: 'root = {}'
+
+pipeline:
+  processors:
+    # 1. Запрос в БД для поиска новостей без перевода.
+    # ВАЖНО: Замените 'stg.rss_news' на реальную таблицу, откуда можно взять сырой link
+    - sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          SELECT h.news_link, t.language_code, t.title_txt, t.summary_txt
+          FROM dtl.s_rss_news_texts t
+          JOIN dtl.h_rss_news h ON t.news_id = h.news_id
+          WHERE language_code = 'en'
+            AND NOT EXISTS (SELECT 1
+                            FROM dtl.s_rss_news_embeddings e
+                            WHERE e.news_id = t.news_id)
+
+    # unarchive разбивает этот массив на отдельные сообщения.
+    - unarchive:
+        format: json_array
+
+    - branch:
+        request_map: |
+          root = {
+            "model": "embeddinggemma:300m",
+            "input": this.title_txt.or("") + " " + this.summary_txt.or(""),
+            "dimensions": 768,
+            "options": {"temperature": 0.0, "top_p": 0.1}
+          }
+        processors:
+          - http:
+              url: "http://dwh-ol-1:11434/api/embed"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+              timeout: 1m
+          - mapping: |
+              root.embedding = this.embeddings.0
+        result_map: |
+          root.embedding = this.embedding
+
+    # логирование результата перевода
+    - mapping: |
+        root = if this.embedding == null { 
+          throw("Failed to get embedding") 
+        } else { 
+          this 
+        }
+
+        let vec_size = this.embedding.length().string() + " dims"
+        meta log_msg = "[✅ BACKFILL EMBEDDED] Link: %s | %s | Vct: %s | Title: %s".format(
+          this.news_link.string(), this.language_code.string(), $vec_size, this.title_txt.string()
+        )
+
+    - log:
+        level: INFO
+        message: '${! meta("log_msg") }'
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dtl.s_rss_news_embeddings (
+              news_id, model_nm, embedding_vct
+            ) VALUES (xxh64($1), $2, $3::vector)
+            ON CONFLICT (news_id, model_nm) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.news_link.string().or(""),
+              "embeddinggemma:300m",
+              this.embedding.string()
+            ]
+          batching:
+            count: 5
+            period: 1s

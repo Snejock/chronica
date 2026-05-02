@@ -5,23 +5,36 @@ input:
     consumer_group: "LOAD_DTL_S_RSS_NEWS_TEXTS"
 
 pipeline:
-  threads: 1
+  # threads: 4
   processors:
     - schema_registry_decode:
         url: "http://dwh-rp-1:8081"
+    - catch:
+        - log:
+            level: ERROR
+            message: "Error decoding avro: ${! error() }"
 
-    - dedupe:
-        cache: redis_cache
-        key: "dedupe:dtl.s_rss_news_texts:${! this.link.string() }"
+    # выполнение проверки, была ли новость обработана ранее
+    - branch:
+        processors:
+          - try:
+              - cache:
+                  resource: redis_cache
+                  operator: get
+                  key: "processed:dtl.s_rss_news_texts:${! this.link.string() }:${! this.language_code.string().or(\"unknown\") }"
+        result_map: 'meta is_processed = content().string().catch("")'
+
+    - mapping: |
+        root = if meta("is_processed").or("") != "" { deleted() } else { this }
 
     # получение из кэша language_code для this.feed_id
     - branch:
         processors:
           - try:
-            - cache:
-                resource: redis_cache
-                operator: get
-                key: "lookup:dtl.d_rss_feeds:${! this.feed_id }"
+              - cache:
+                  resource: redis_cache
+                  operator: get
+                  key: "lookup:dtl.d_rss_feeds:${! this.feed_id }"
         result_map: 'root.language_code = content().string().catch("")'
 
     # получение из базы (при отсутствии в кэше) значения language_code для this.feed_id
@@ -44,7 +57,6 @@ pipeline:
                     operator: set
                     key: 'lookup:dtl.d_rss_feeds:${! this.index(0).feed_id.string() }'
                     value: '${! this.index(0).language_code.string() }'
-
         result_map: 'root.language_code = this.index(0).language_code.catch("unknown")'
 
     # получение списка уже существующих переводов для этой новости из БД
@@ -98,12 +110,12 @@ pipeline:
           } else { deleted() }
         processors:
           - try:
-            - http:
-                url: "http://dwh-ol-1:11434/api/generate"
-                verb: POST
-                headers:
-                  Content-Type: "application/json"
-                timeout: 5m
+              - http:
+                  url: "http://dwh-ol-1:11434/api/generate"
+                  verb: POST
+                  headers:
+                    Content-Type: "application/json"
+                  timeout: 5m
           - mapping: |
               let result = this.response.parse_json().catch(null)
               root.translated_title = if $result != null { $result.title } else { null }
@@ -145,12 +157,12 @@ pipeline:
           } else { deleted() }
         processors:
           - try:
-            - http:
-                url: "http://dwh-ol-1:11434/api/generate"
-                verb: POST
-                headers:
-                  Content-Type: "application/json"
-                timeout: 5m
+              - http:
+                  url: "http://dwh-ol-1:11434/api/generate"
+                  verb: POST
+                  headers:
+                    Content-Type: "application/json"
+                  timeout: 1m
           - mapping: |
               let result = this.response.parse_json().catch(null)
               root.translated_title = if $result != null { $result.title } else { null }
@@ -168,36 +180,40 @@ pipeline:
     - mapping: |
         let trans_en = this.translated_title_en != null
         let trans_ru = this.translated_title_ru != null
-        let is_trans = $trans_en || $trans_ru
-        let status = if $is_trans { "✅ TRANSLATED" } else { "⏩ TRANSLATE SKIPPED" }
-        
-        let link = this.link.string()
-        let lang = this.language_code.string().or("unknown")
-        let log_title = this.title.string()
-        
-        let targets = if $trans_en && $trans_ru { "en,ru" } 
-                      else if $trans_en { "en" } 
-                      else if $trans_ru { "ru" } 
-                      else { "none" }
-        
-        let trans_preview = if $trans_en { this.translated_title_en.string() } 
-                            else if $trans_ru { this.translated_title_ru.string() } 
-                            else { "----" }
-        
-        meta log_msg = "[%s] Link: %s | %s -> %s | Title: %s | Result: %s".format(
-          $status, $link, $lang, $targets, $log_title, $trans_preview
-        )
 
-    - log:
-        level: INFO
-        message: '${! meta("log_msg") }'
+        # Запоминаем в метадату, был ли перевод
+        meta is_translated = $trans_en || $trans_ru
+
+        if ($trans_en || $trans_ru) {
+          let link = this.link.string()
+          let lang = this.language_code.string().or("unknown")
+          let log_title = this.title.string()
+
+          let targets = if $trans_en && $trans_ru { "en,ru" } 
+                        else if $trans_en { "en" } 
+                        else { "ru" }
+
+          let trans_preview = if $trans_en { this.translated_title_en.string() }
+                              else { this.translated_title_ru.string() }
+
+          meta log_msg = "[✅ TRANSLATED] Link: %s | %s -> %s | Title: %s | Result: %s".format(
+            $link, $lang, $targets, $log_title, $trans_preview
+          )
+        }
+
+    - switch:
+        - check: 'meta("log_msg") != null'
+          processors:
+            - log:
+                level: INFO
+                message: '${! meta("log_msg") }'
 
     # формирование массива [оригинал + перевод]
     - mapping: |
         root = []
 
         # оригинал
-        if this.link != null && this.title != null && this.summary != null {
+        if this.link != null && this.title != null {
           root = root.append({
             "link": this.link,
             "language_code": this.language_code,
@@ -257,6 +273,7 @@ output:
             count: 5
             period: 1s
 
+      # запись в брокер
       - redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
           topic: "dtl_s_rss_news_texts"
@@ -272,3 +289,7 @@ output:
               url: "http://dwh-rp-1:8081"
               subject: "dtl_s_rss_news_texts-value"
               avro_raw_json: true
+
+      - cache:
+          target: redis_cache
+          key: "processed:dtl.s_rss_news_texts:${! this.link.string() }:${! this.language_code.string().or(\"unknown\") }"
