@@ -1,0 +1,293 @@
+input:
+  redpanda:
+    seed_brokers: ["dwh-rp-1:9092"]
+    topics: ["dtl_s_rss_news_texts"]
+    consumer_group: "LOAD_DTL_S_RSS_NEWS_TICKER_REACTIONS"
+
+pipeline:
+  processors:
+    - schema_registry_decode:
+        url: "http://dwh-rp-1:8081"
+    - catch:
+        - log:
+            level: ERROR
+            message: "Error decoding avro: ${! error() }"
+
+    # Оставляем только новости на английском языке
+    - mapping: |
+        root = if this.language_code != "en" { deleted() } else { this }
+
+    # Проверка в кэше: анализировалась ли эта новость ранее
+    - branch:
+        processors:
+          - try:
+              - cache:
+                  resource: redis_cache
+                  operator: get
+                  key: "processed:dtl.s_rss_news_ticker_reactions:${! this.news_link.string() }"
+        result_map: 'meta is_processed = content().string().catch("")'
+
+    # Если новость уже была обработана, удаляем ее из потока
+    - mapping: |
+        root = if meta("is_processed").or("") != "" { deleted() } else { this }
+
+    # Обращение к LLM для извлечения тикеров и оценок
+    - branch:
+        request_map: |
+          let ai_model_name = "deepseek-v4-flash:cloud"
+          
+          let watchlist = """
+            SBER: Sberbank Rossii PJSC, Сбербанк, Sberbank (Banking)
+            ROSN: Rosneft PJSC, Роснефть, Rosneft (Energy)
+            LKOH: LUKOIL PJSC, Лукойл, Lukoil (Energy, Oil)
+            NVTK: NOVATEK PJSC, НОВАТЭК, Novatek (Energy, Gas)
+            PLZL: Polyus PJSC, Полюс, Polyus (Gold Mining)
+            GAZP: Gazprom PJSC, Газпром, Gazprom (Energy, Gas)
+            GMKN: MMC NORILSK NICKEL PJSC, ГМК Норникель, Norilsk Nickel (Metals & Mining, Nickel/Palladium)
+            SIBN: Gazprom Neft PJSC, Газпромнефть, Gazprom Neft (Energy, Oil)
+            YDEX: IPJSC YANDEX, Яндекс, Yandex (Tech)
+            TATN: TATNEFT n.a. V.D. Shashin, Татнефть, Tatneft (Energy, Oil)
+            X5: X5 Corporate Center, ИКС-5 Ритейл, X5 Retail Group (Retail)
+            MGNT: Magnit PJSC, Магнит, Magnit (Retail)
+            LENT: Lenta IPJSC, Лента, Lenta (Retail)
+            OZON: OZON Holding PJSC, Озон, Ozon (Retail)
+            VTBR: Bank VTB PJSC, Банк ВТБ, VTB (Banking)
+            MOEX: Moscow Exchange MICEX-RTS PJSC, Московская Биржа, MOEX (Exchange)
+            SNGS: Surgutneftegas PJSC, Сургутнефтегаз, Surgutneftegas (Energy, Oil)
+            IRAO: Inter RAO PJSC, Интер РАО, Inter RAO (Energy, Electric)
+            TRNF: Transneft PJSC, Транснефть, Transneft (Oil Transport)
+            CHMF: Severstal PJSC, Северсталь, Severstal (Steel)
+            NLMK: NLMK PJSC, НЛМК, NLMK (Steel)
+            MAGN: MMK PJSC, ММК, MMK (Steel)
+            ALRS: AK ALROSA PJSC, Алроса, ALROSA (Diamonds)
+            PHOR: PhosAgro PJSC, ФосАгро, PhosAgro (Fertilizers)
+            AKRN: Acron PJSC, Акрон, Acron (Fertilizers)
+            RUAL: United Company RUSAL IPJSC, Русал, RUSAL (Aluminium)
+            FIXP: Fix Price Group Ltd, Фикс Прайс, Fix Price (Retail)
+            MTSS: MTS PJSC, МТС, MTS (Telecom)
+            PIKK: PIK SHb PJSC, Группа ПИК, PIK Group PJSC (Real Estate)
+            AFLT: Aeroflot PJSC, Аэрофлот, Aeroflot (Aviation)
+          """
+
+          let system_instruction = """
+            Ты — старший финансовый аналитик (Senior Quant Researcher).
+            Твоя задача — извлекать сигналы из новостей для алгоритмической торговли.
+            
+            **Важно: Ты должен возвращать JSON массив объектов с полями:**
+            - ticker_code (string) — тикер из предоставленного Watchlist. Если новость косвенно влияет на несколько компаний (например, через цены на нефть, геополитику, макроэкономику), ты обязан перечислить **все релевантные тикеры** из списка. Не ограничивайся прямыми упоминаниями.
+            - category_nm (string) — одно из значений: earnings, dividends, m_and_a, capital, legal, management, contracts, products, operations, ratings, macro, other.
+            - impact_scr (integer) — от -100 до +100 (см. шкалу ниже).
+            - confidence_prt (float) — от 0.00 до 1.00. Для уже наступивших событий = 1.00.
+            - reason_txt (string) — краткое пояснение на русском языке.
+            Давай оценку и краткое пояснение по каждому тикеру независимо друг от друга, не нужно их связывать в один текст.
+            
+            **Правила для ticker_code:**
+            - Если новость **прямо упоминает** компанию из Watchlist — включай её тикер.
+            - Если новость **косвенно влияет** на сектор или весь рынок (например, цены на нефть, санкции, курс рубля, геополитика) — включай **все тикеры** из Watchlist, которые подпадают под это влияние.
+            - Если влияние распространяется на все компании списка (макро-шок, паника на рынке) — перечисли **все тикеры**.
+            - Если новость **вообще не связана** ни с одной из компаний списка и не влияет на их бизнес — верни **пустой массив** `"tickers": []`.
+            
+            Примеры:
+            - Новость о росте цен на нефть → `ticker_code` = ["ROSN","LKOH","GAZP","SIBN","TATN"]
+            - Новость об аэропорте Домодедово (нет компаний из списка) → `"tickers": []`
+            - Новость о судебном иске к Газпрому → `ticker_code` = ["GAZP"]
+            
+            Шкала оценки (impact_scr -100..+100):
+            Используй диапазон от -100 до +100.
+  
+            Позитив (+)
+            +1..+10: Шум, слухи, участие в форумах.
+            +10..+30: Позитивные операционные новости, мелкие контракты.
+            +30..+70: Отчеты выше ожиданий, дивиденды, крупные контракты, победы в суде.
+            +70..+100: M&A, рекордная прибыль, байбэк, стратегические прорывы.
+  
+            Негатив (-)
+            -1..-10: Негативные слухи, критика.
+            -10..-30: Мелкие штрафы, понижение рейтингов.
+            -30..-70: Отчеты ниже ожиданий, отмена дивидендов, санкции, крупные иски.
+            -70..-100: Дефолт, уголовные дела, катастрофы, потеря рынка.
+  
+            Степень уверенности (confidence_prt) должно отражать вероятность наступления события (если оно еще не наступило).
+            Используй диапазон от 0.00 до 1.00 с двумя знаками после запятой. 
+            Для событий, которые уже наступили, используй значение confidence_prt = 1.00.
+  
+            Типы событий (строго lowercase):
+            - earnings: Финансовые отчеты (МСФО/РСБУ), операционные результаты, прогнозы (guidance) по выручке/прибыли, dates отчетов.
+            - dividends: Рекомендации СД, утверждение выплат, даты отсечек (record date), отмена дивидендов.
+            - m_and_a: Слияния, поглощения, покупка/продажа долей, создание совместных предприятий (JV), реструктуризация.
+            - capital: Обратный выкуп (buyback), допэмиссия акций (SPO/FPO), сплит, выпуск облигаций, работа с долгом.
+            - legal: Суды, иски, санкции, блокировки активов, штрафы регуляторов (ЦБ, ФАС), антимонопольные дела.
+            - management: Назначение/уход топ-менеджмента (CEO, C-level), сделки инсайдеров, конфликты акционеров.
+            - contracts: Выигрыш/потеря крупных тендеров, заключение стратегических контрактов, госзаказы.
+            - products: Запуск новых продуктов, IT-релизы, патенты, презентации, отзыв брака.
+            - operations: Производственные показатели (добыча/продажи), логистика, аварии, пожары, открытие/закрытие точек.
+            - ratings: Изменение целевой цены инвестбанками, обновление кредитных рейтингов агентствами.
+            - macro: Курсы валют, цены на сырье, ставки ЦБ.
+            - other: Все, что не подходит выше (благотворительность, HR, награды, малозначимый шум).
+  
+            Отвечай только на русском языке.
+          """
+
+          let prompt_text = """
+            Watchlist (тикер: описание):
+            """ + $watchlist + """
+            
+            Новость:
+            Title: """ + this.title_txt.or("") + """
+            Summary: """ + this.summary_txt.or("") + """
+            
+            Задание:
+            Проанализируй новость и верни JSON массив объектов, где каждый объект описывает влияние на один тикер.
+            Правила:
+            1. Включай тикеры, даже если новость косвенно влияет (например, через сырьевые цены, геополитику, макроэкономику).
+            2. Если новость влияет на несколько компаний одного сектора — перечисли их все.
+            3. Если новость не связана ни с одним тикером из Watchlist — верни пустой массив.
+            4. Указывай confidence_prt = 1.00 для уже случившихся событий (например, ограничения сняты, контракт подписан).
+            5. Поле reason_txt пиши на русском языке.
+            
+            Формат ответа (строго):
+            {
+              "tickers": [
+                {
+                  "ticker_code": "SBER",
+                  "category_nm": "macro",
+                  "impact_scr": -15,
+                  "confidence_prt": 0.85,
+                  "reason_txt": "Например, укрепление рубля негативно для экспортёров"
+                }
+              ]
+            }
+            
+            Твой ответ (только JSON, без пояснений):
+          """
+
+          root = {
+            "model": $ai_model_name,
+            "stream": false,
+            "options": {
+              "temperature": 0.0,
+              "top_p": 0.1
+            },
+            "system": $system_instruction,
+            "prompt": $prompt_text,
+            "format": {
+              "type": "object",
+              "properties": {
+                "tickers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ticker_code": {
+                        "type": "string", 
+                        "description": "Stock ticker symbol from the Watchlist, e.g. SBER, ROSN"
+                      },
+                      "category_nm": {
+                        "type": "string", 
+                        "enum": [
+                          "earnings", "dividends", "m_and_a", "capital", "legal", 
+                          "management", "contracts", "products", "operations", 
+                          "ratings", "macro", "other"
+                        ],
+                        "description": "Exact category of the event"
+                      },
+                      "impact_scr": {
+                        "type": "integer", 
+                        "description": "Impact score from -100 to 100"
+                      },
+                      "confidence_prt": {
+                        "type": "number", 
+                        "description": "Confidence from 0.00 to 1.00"
+                      },
+                      "reason_txt": {
+                        "type": "string", 
+                        "description": "Short explanation of the impact in Russian"
+                      }
+                    },
+                    "required": ["ticker_code", "category_nm", "impact_scr", "confidence_prt", "reason_txt"]
+                  }
+                }
+              },
+              "required": ["tickers"]
+            }
+          }
+        processors:
+          - try:
+              - http:
+                  url: "http://dwh-ol-1:11434/api/generate"
+                  verb: POST
+                  headers:
+                    Content-Type: "application/json"
+                  timeout: 5m
+          - mapping: |
+              let result = this.response.parse_json().catch(null)
+              root.llm_tickers = if $result != null { $result.tickers } else { [] }
+        result_map: |
+          root.tickers = this.llm_tickers
+
+    - switch:
+        - check: 'this.tickers.length().or(0) > 0'
+          processors:
+            - log:
+                level: INFO
+                message: '[🧠 LLM ANALYZED] Link: ${! this.news_link } | Found ${! this.tickers.length() } tickers. Tickers: ${! this.tickers.string() }'
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - processors:
+          - mapping: |
+              root = if this.tickers.length().or(0) == 0 { deleted() } else { this }
+
+          - mapping: |
+              let out = []
+              let model = "deepseek-v4-flash:cloud"
+              
+              root = this.tickers.map_each(t -> {
+                "news_link": this.news_link.string(),
+                "model_nm": $model,
+                "ticker_code": t.ticker_code.string().catch("unknown"),
+                "category_nm": t.category_nm.string().catch("other"),
+                "impact_scr": t.impact_scr.number().catch(0),
+                "confidence_prt": t.confidence_prt.number().catch(0.0),
+                "language_code": "ru",
+                "reason_txt": t.reason_txt.string().catch("")
+              })
+
+          - unarchive:
+              format: json_array
+
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dtl.s_rss_news_ticker_reactions (
+              news_id, model_nm, ticker_code, category_nm, impact_scr, confidence_prt, language_code, reason_txt
+            ) VALUES (xxh64($1), $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (news_id, ticker_code, model_nm, language_code) DO UPDATE SET
+              _loaded_dttm = now(),
+              model_nm = EXCLUDED.model_nm,
+              category_nm = EXCLUDED.category_nm,
+              impact_scr = EXCLUDED.impact_scr,
+              confidence_prt = EXCLUDED.confidence_prt,
+              language_code = EXCLUDED.language_code,
+              reason_txt = EXCLUDED.reason_txt;
+          args_mapping: |
+            root = [
+              this.news_link,
+              this.model_nm,
+              this.ticker_code,
+              this.category_nm,
+              this.impact_scr,
+              this.confidence_prt,
+              this.language_code,
+              this.reason_txt
+            ]
+          batching:
+            count: 10
+            period: 1s
+
+      - cache:
+          target: redis_cache
+          key: "processed:dtl.s_rss_news_ticker_reactions:${! this.news_link.string() }"
