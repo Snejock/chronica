@@ -1,0 +1,197 @@
+input:
+  redpanda:
+    seed_brokers: ["dwh-rp-1:9092"]
+    topics: ["dtl_s_rss_news_texts"]
+    consumer_group: "LOAD_DTL_S_RSS_NEWS_REACTIONS"
+
+pipeline:
+  processors:
+    - schema_registry_decode:
+        url: "http://dwh-rp-1:8081"
+    - catch:
+        - log:
+            level: ERROR
+            message: "Error decoding avro: ${! error() }"
+
+    # Оставляем только новости на английском языке
+    - mapping: |
+        root = if this.language_code != "en" { deleted() } else { this }
+
+    # Проверка в кэше: анализировалась ли эта новость ранее
+    - branch:
+        processors:
+          - try:
+              - cache:
+                  resource: redis_cache
+                  operator: get
+                  key: "processed:dtl.s_rss_news_reactions:${! this.news_link.string() }"
+        result_map: 'meta is_processed = content().string().catch("")'
+
+    # Если новость уже была обработана, удаляем ее из потока
+    - mapping: |
+        root = if meta("is_processed").or("") != "" { deleted() } else { this }
+
+    # Обращение к LLM для извлечения тикеров и оценок
+    - branch:
+        request_map: |
+          let ai_model_name = "deepseek-v4-flash:cloud"
+
+          let system_instruction = """
+            Ты — эксперт-аналитик по медиа и оценке рисков. 
+            Твоя задача — провести глубокий анализ предоставленной новости, оценить её потенциальное влияние по нескольким метрикам и вернуть структурированные данные в формате JSON.
+            
+            **Важно: Ты должен возвращать JSON объект со следующими полями:**
+            - reach_idx (string) — экспоненциальная оценка количества людей, на которых повлияет новость (1k, 10k, 100k, 1m, 10m, 100m, 1b, 10b)
+            - impact_scr (integer) — сила влияния новости на жизнь одного человека (1 — шум, 100 — фундаментальные изменения)
+            - duration_days (integer) — прогноз длительности эффекта новости в днях (1, 7, 30, 90, 180, 365, 3650, 36500)
+            - scale_nm (string) — географический охват. Строго одно из следующих значений:
+              * "local" — локальное влияние новости (город, штат, область)
+              * "national" — влияние в пределах одной страны
+              * "regional" — влияние на несколько стран одного региона (например, Европа, Ближний Восток)
+              * "global" — влияние на весь мир
+            - confidence_prt (float) — от 0.00 до 1.00. Для уже наступивших событий = 1.00
+            - reason_txt (string) — краткое пояснение на русском языке
+            
+            Степень уверенности (confidence_prt) должно отражать вероятность наступления события (если оно еще не наступило).
+            Используй диапазон от 0.00 до 1.00 с двумя знаками после запятой. 
+            Для событий, которые уже наступили, используй значение confidence_prt = 1.00.
+  
+            Отвечай только на русском языке.
+          """
+
+          let prompt_text = """
+            Новость:
+            Title: """ + this.title_txt.or("") + """
+            Summary: """ + this.summary_txt.or("") + """
+            
+            Задание:
+            Проанализируй новость и верни JSON объект.
+            
+            Твой ответ (только JSON, без пояснений):
+          """
+
+          root = {
+            "model": $ai_model_name,
+            "stream": false,
+            "options": {
+              "temperature": 0.0,
+              "top_p": 0.1
+            },
+            "system": $system_instruction,
+            "prompt": $prompt_text,
+            "format": {
+              "type": "object",
+              "properties": {
+                "reach_idx": {
+                  "type": "string",
+                  "enum": ["1k", "10k", "100k", "1m", "10m", "100m", "1b", "10b"],
+                  "description": "Number of people affected by the news ('1k', '10k', '100k', '1m', '10m', '100m', '1b', '10b')"
+                },
+                "impact_scr": {
+                  "type": "integer", 
+                  "description": "Impact score from -100 to 100"
+                },
+                "duration_days": {
+                  "type": "integer",
+                  "description": "Duration of the news effect in days (1, 7, 30, 90, 180, 365, 3650, 36500)"
+                },
+                "scale_nm": {
+                  "type": "string", 
+                  "enum": ["local", "national", "regional", "global"],
+                  "description": "Scale of the news impact (local, national, regional, global)"
+                },
+                "confidence_prt": {
+                  "type": "number", 
+                  "description": "Confidence from 0.00 to 1.00"
+                },
+                "reason_txt": {
+                  "type": "string", 
+                  "description": "Short explanation of the impact in Russian"
+                }
+              },
+              "required": ["reach_idx", "impact_scr", "duration_days", "scale_nm", "confidence_prt", "reason_txt"]
+            }
+          }
+
+        processors:
+          - try:
+              - http:
+                  url: "http://dwh-ol-1:11434/api/generate"
+                  verb: POST
+                  headers:
+                    Content-Type: "application/json"
+                  timeout: 5m
+          - mapping: |
+              let result = this.response.parse_json().catch(null)
+              root.reaction = if $result != null { $result } else { null }
+        result_map: |
+          root.reaction = this.reaction
+
+    - switch:
+        - check: 'this.reaction != null'
+          processors:
+            - log:
+                level: INFO
+                message: '[🧠 LLM ANALYZED] Link: ${! this.news_link } | Title: ${! this.title_txt} | Reaction: ${! this.reaction.string() }'
+
+output:
+  broker:
+    pattern: fan_out
+    outputs:
+      - label: load_dtl_s_rss_news_reactions_pg
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dtl.s_rss_news_reactions (
+              news_id, model_nm, reach_idx, impact_scr, duration_days, scale_nm, confidence_prt, language_code, reason_txt
+            ) VALUES (xxh64($1), $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (news_id, model_nm, language_code) DO UPDATE SET
+              _loaded_dttm = now(),
+              reach_idx = EXCLUDED.reach_idx,
+              impact_scr = EXCLUDED.impact_scr,
+              duration_days = EXCLUDED.duration_days,
+              scale_nm = EXCLUDED.scale_nm,
+              confidence_prt = EXCLUDED.confidence_prt,
+              reason_txt = EXCLUDED.reason_txt;
+          args_mapping: |
+            root = [
+              this.news_link,
+              this.model_nm,
+              this.reach_idx,
+              this.impact_scr,
+              this.duration_days,
+              this.scale_nm,
+              this.confidence_prt,
+              this.language_code,
+              this.reason_txt
+            ]
+          batching:
+            count: 10
+            period: 1s
+
+        processors:
+          - mapping: |
+              root = if this.reaction == null || this.reaction == ""{ deleted() } else { this }
+
+          - mapping: |
+              let model = "deepseek-v4-flash:cloud"
+              
+              root = {
+                "news_link": this.news_link.string(),
+                "model_nm": $model,
+                "reach_idx": this.reaction.reach_idx.string(),
+                "impact_scr": this.reaction.impact_scr.number(),
+                "duration_days": this.reaction.duration_days.number(),
+                "scale_nm": this.reaction.scale_nm.string(),
+                "confidence_prt": this.reaction.confidence_prt.number(),
+                "language_code": "ru",
+                "reason_txt": this.reaction.reason_txt.string().catch("")
+              }
+
+      - cache:
+          target: redis_cache
+          key: "processed:dtl.s_rss_news_reactions:${! this.news_link.string() }"
+        processors:
+          - mapping: |
+              root = if this.reaction == null { deleted() } else { this }
