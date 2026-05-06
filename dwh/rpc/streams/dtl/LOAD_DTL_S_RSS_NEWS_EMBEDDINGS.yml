@@ -94,7 +94,8 @@ output:
   broker:
     pattern: fan_out
     outputs:
-      - sql_raw:
+      - label: load_dtl_s_rss_news_embeddings_pg
+        sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |

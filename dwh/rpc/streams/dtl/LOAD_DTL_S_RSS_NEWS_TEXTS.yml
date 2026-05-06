@@ -254,7 +254,8 @@ output:
   broker:
     pattern: fan_out
     outputs:
-      - sql_raw:
+      - label: load_dtl_s_rss_news_texts_pg
+        sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
@@ -274,7 +275,8 @@ output:
             period: 1s
 
       # запись в брокер
-      - redpanda:
+      - label: load_dtl_s_rss_news_texts_rp
+        redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
           topic: "dtl_s_rss_news_texts"
           key: '${! meta("key") }'

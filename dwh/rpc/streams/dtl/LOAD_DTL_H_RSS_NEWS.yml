@@ -27,36 +27,39 @@ pipeline:
         root = if meta("is_processed").or("") != "" { deleted() } else { this }        
 
 output:
+  label: load_dtl_h_rss_news
   broker:
     pattern: fan_out
     outputs:
-    - sql_raw:
-        driver: postgres
-        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-        query: |
-          INSERT INTO dtl.h_rss_news (
-            _source_system, news_id, news_link, published_utc, feed_id
-          ) VALUES (
-            $1,
-            xxh64($2),
-            $2,
-            to_timestamp($3),
-            $4
-          ) ON CONFLICT (news_id) DO NOTHING;
-        args_mapping: |
-          let pub = this.published_utc.number().or(0)
-          let pub_seconds = if $pub > 5000000000 { $pub / 1000 } else { $pub }
-          
-          root = [
-            this.source_system.string().or(""),
-            this.link.string().or(""),
-            $pub_seconds,
-            this.feed_id.number().or(0)
-          ]
-        batching:
-          count: 100
-          period: 1s
+      - label: load_dtl_h_rss_news_pg
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dtl.h_rss_news (
+              _source_system, news_id, news_link, published_utc, feed_id
+            ) VALUES (
+              $1,
+              xxh64($2),
+              $2,
+              to_timestamp($3),
+              $4
+            ) ON CONFLICT (news_id) DO NOTHING;
+          args_mapping: |
+            let pub = this.published_utc.number().or(0)
+            let pub_seconds = if $pub > 5000000000 { $pub / 1000 } else { $pub }
+            
+            root = [
+              this.source_system.string().or(""),
+              this.link.string().or(""),
+              $pub_seconds,
+              this.feed_id.number().or(0)
+            ]
+          batching:
+            count: 100
+            period: 1s
 
-    - cache:
-        target: redis_cache
-        key: "processed:dtl.h_rss_news:${! this.link.string() }"
+      - label: load_dtl_h_rss_news_rd
+        cache:
+          target: redis_cache
+          key: "processed:dtl.h_rss_news:${! this.link.string() }"

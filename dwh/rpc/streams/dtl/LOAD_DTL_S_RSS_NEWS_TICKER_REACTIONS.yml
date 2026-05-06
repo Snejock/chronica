@@ -79,7 +79,7 @@ pipeline:
             - impact_scr (integer) — от -100 до +100 (см. шкалу ниже).
             - confidence_prt (float) — от 0.00 до 1.00. Для уже наступивших событий = 1.00.
             - reason_txt (string) — краткое пояснение на русском языке.
-            Давай оценку и краткое пояснение по каждому тикеру независимо друг от друга, не нужно их связывать в один текст.
+            Давай оценку и краткое пояснение по каждому тикеру независимо друг от друга, не нужно их связывать тикеры между собой какими-либо словами.
             
             **Правила для ticker_code:**
             - Если новость **прямо упоминает** компанию из Watchlist — включай её тикер.
@@ -138,6 +138,7 @@ pipeline:
             
             Задание:
             Проанализируй новость и верни JSON массив объектов, где каждый объект описывает влияние на один тикер.
+            Проводи анализ и представь обоснование в поле reason_txt независимо между разными тикерами. 
             Правила:
             1. Включай тикеры, даже если новость косвенно влияет (например, через сырьевые цены, геополитику, макроэкономику).
             2. Если новость влияет на несколько компаний одного сектора — перечисли их все.
@@ -236,28 +237,7 @@ output:
   broker:
     pattern: fan_out
     outputs:
-      - processors:
-          - mapping: |
-              root = if this.tickers.length().or(0) == 0 { deleted() } else { this }
-
-          - mapping: |
-              let out = []
-              let model = "deepseek-v4-flash:cloud"
-              
-              root = this.tickers.map_each(t -> {
-                "news_link": this.news_link.string(),
-                "model_nm": $model,
-                "ticker_code": t.ticker_code.string().catch("unknown"),
-                "category_nm": t.category_nm.string().catch("other"),
-                "impact_scr": t.impact_scr.number().catch(0),
-                "confidence_prt": t.confidence_prt.number().catch(0.0),
-                "language_code": "ru",
-                "reason_txt": t.reason_txt.string().catch("")
-              })
-
-          - unarchive:
-              format: json_array
-
+      - label: load_dtl_s_rss_news_ticker_reactions_pg
         sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
@@ -288,6 +268,30 @@ output:
             count: 10
             period: 1s
 
+        processors:
+          - mapping: |
+              root = if this.tickers.length().or(0) == 0 { deleted() } else { this }
+
+          - mapping: |
+              let model = "deepseek-v4-flash:cloud"
+              
+              root = this.tickers.map_each(t -> {
+                "news_link": this.news_link.string(),
+                "model_nm": $model,
+                "ticker_code": t.ticker_code.string().catch("unknown"),
+                "category_nm": t.category_nm.string().catch("other"),
+                "impact_scr": t.impact_scr.number().catch(0),
+                "confidence_prt": t.confidence_prt.number().catch(0.0),
+                "language_code": "ru",
+                "reason_txt": t.reason_txt.string().catch("")
+              })
+
+          - unarchive:
+              format: json_array
+
       - cache:
           target: redis_cache
           key: "processed:dtl.s_rss_news_ticker_reactions:${! this.news_link.string() }"
+        processors:
+          - mapping: |
+              root = if this.tickers.length().or(0) == 0 { deleted() } else { this }
