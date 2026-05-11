@@ -6,32 +6,37 @@ input:
 
 pipeline:
   processors:
-    - schema_registry_decode:
+    - label: decode
+      schema_registry_decode:
         url: "http://dwh-rp-1:8081"
     - catch:
         - log:
             level: ERROR
             message: "Error decoding avro: ${! error() }"
+        - mapping: 'root = deleted()'
 
     # выполнение проверки, была ли новость обработана ранее
     - branch:
         processors:
           - try:
-              - cache:
+              - label: redis_check
+                cache:
                   resource: redis_cache
-                  operator: get
+                  operator: exists
                   key: "processed:dtl.h_rss_news:${! this.link.string() }"
-        result_map: 'meta is_processed = content().string().catch("")'
+        result_map: |
+          meta is_processed = content().string().catch("")
 
-    - mapping: |
+    - label: map
+      mapping: |
         root = if meta("is_processed").or("") != "" { deleted() } else { this }        
 
 output:
-  label: load_dtl_h_rss_news
+  label: out_dtl_h_rss_news
   broker:
     pattern: fan_out
     outputs:
-      - label: load_dtl_h_rss_news_pg
+      - label: postgres
         sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
@@ -53,13 +58,13 @@ output:
               this.source_system.string().or(""),
               this.link.string().or(""),
               $pub_seconds,
-              this.feed_id.number().or(0)
+              this.feed_id.number().catch(null)
             ]
           batching:
             count: 100
             period: 1s
 
-      - label: load_dtl_h_rss_news_rd
+      - label: redis
         cache:
           target: redis_cache
           key: "processed:dtl.h_rss_news:${! this.link.string() }"
