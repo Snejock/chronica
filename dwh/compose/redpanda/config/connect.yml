@@ -4,5 +4,8 @@ http:
   address: 0.0.0.0:4195
 
 logger:
-  level: INFO
+  level: WARN
   format: logfmt
+  file:
+    rotate: true
+    rotate_max_age_days: 3
