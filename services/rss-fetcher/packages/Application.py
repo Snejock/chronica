@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class Application:
-    def __init__(self, config_path: str = "./config/rss_feeds.yml", cursor: int | None = None):
+    def __init__(self, config_path: str = "./config/rss_feeds.yaml", cursor: int | None = None):
         logger.info("Initialize application...")
         self.config = Config()
         self.feed_list = None

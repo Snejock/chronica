@@ -16,7 +16,7 @@ services:
 #    dns:
 #      - 192.168.1.10
     volumes:
-      # - ../config/config.yml:/app/config/config.yml:ro
+      # - ../config/config.yaml:/app/config/config.yaml:ro
       - ../log:/app/services/rss-fetcher/log
     environment:
       - TZ=Europe/Moscow

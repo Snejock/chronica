@@ -1,4 +1,4 @@
-# /etc/redpanda-connect/resources.yml
+# /etc/redpanda-connect/resources.yaml
 cache_resources:
   - label: redis_cache
     redis:

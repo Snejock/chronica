@@ -9,7 +9,7 @@ services:
       - '38082:8081'
     volumes:
       - ../../dbt:/usr/app/dbt/dwh
-      - ./config/profiles.yml:/root/.dbt/profiles.yml
+      - ./config/profiles.yaml:/root/.dbt/profiles.yaml
     working_dir: /usr/app/dbt/dwh
     stdin_open: true
     tty: true
