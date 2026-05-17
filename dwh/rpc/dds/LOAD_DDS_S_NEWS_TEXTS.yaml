@@ -5,7 +5,7 @@ input:
     consumer_group: "LOAD_DDS_S_NEWS_TEXTS"
 
 pipeline:
-  # threads: 4
+  threads: 1
   processors:
     - label: decode
       schema_registry_decode:
@@ -14,6 +14,7 @@ pipeline:
         - log:
             level: ERROR
             message: "Error decoding avro: ${! error() }"
+        - mapping: 'root = deleted()'
 
     # выполнение проверки, была ли новость обработана ранее
     - branch:
@@ -23,7 +24,7 @@ pipeline:
                 cache:
                   resource: redis_cache
                   operator: exists
-                  key: "processed:dds.s_news_texts:${! this.link.string() }:${! this.language_code.string().or(\"unknown\") }"
+                  key: "processed:dds.s_news_texts:${! this.link.string() }"
         result_map: 'meta is_processed = content().string().catch("false")'
 
     - mapping: |
@@ -62,6 +63,10 @@ pipeline:
                     key: 'lookup:dds.d_rss_feeds:${! this.index(0).feed_id.string() }'
                     value: '${! this.index(0).language_code.string() }'
         result_map: 'root.language_code = this.index(0).language_code.catch("unknown")'
+
+    # удаление, если язык не удалось определить
+    - mapping: |
+        root = if this.language_code == "unknown" || this.language_code == null || this.language_code == "" { deleted() } else { this }
 
     # получение списка уже существующих переводов для этой новости из БД
     - branch:
@@ -297,12 +302,18 @@ output:
               root.language_code = this.language_code.string().or("unknown")
               root.title_txt = this.title.string().or("")
               root.summary_txt = this.summary.string().or("")
-          - schema_registry_encode:
-              url: "http://dwh-rp-1:8081"
-              subject: "dds_s_news_texts-value"
-              avro_raw_json: true
+          - try:
+              - schema_registry_encode:
+                  url: "http://dwh-rp-1:8081"
+                  subject: "dds_s_news_texts-value"
+                  avro_raw_json: true
+          - catch:
+              - log:
+                  level: ERROR
+                  message: "❌ AVRO ENCODE FAILED: ${! error() }"
+              - mapping: 'root = deleted()'
 
       - label: out_redis
         cache:
           target: redis_cache
-          key: "processed:dds.s_news_texts:${! this.link.string() }:${! this.language_code.string().or(\"unknown\") }"
+          key: "processed:dds.s_news_texts:${! this.link.string() }"

@@ -1,6 +1,6 @@
 input:
   generate:
-    interval: "20m"
+    interval: "30m"
     mapping: 'root = {}'
 
 pipeline:
@@ -29,21 +29,27 @@ pipeline:
                 FROM dm.uniq_news_stories s
                 LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id AND r.language_code = s.language_code
                 WHERE s.language_code = 'ru'
-                  AND (s.published_dttm AT TIME ZONE 'UTC')::date >= CASE
-                        WHEN EXTRACT(HOUR FROM now() AT TIME ZONE 'UTC') < 3
-                        THEN current_date - INTERVAL '1' DAY
-                        ELSE current_date
-                      END
-                  AND (s.published_dttm AT TIME ZONE 'UTC')::date <= current_date
+              ),
+              aggregated AS (
+                SELECT
+                  story_id
+                  , min(story_nm) AS story_nm
+                  , dt
+                  , language_code
+                  , jsonb_agg(description) AS descriptions
+                FROM news
+                GROUP BY story_id, dt, language_code
               )
-          SELECT
-            story_id
-            , min(story_nm) AS story_nm
-            , dt
-            , language_code
-            , jsonb_agg(description) AS descriptions
-          FROM news
-          GROUP BY story_id, dt, language_code
+          SELECT *
+          FROM aggregated a
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM dds.s_story_daily_summaries s
+              WHERE s.story_id = a.story_id
+                AND s.dt = a.dt
+                AND s.language_code = a.language_code
+          )
+          LIMIT 5
 
     - mapping: |
         root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
@@ -127,49 +133,39 @@ pipeline:
           processors:
             - log:
                 level: INFO
-                message: '[🧠 LLM ANALYZED] Link: ${! this.story_id } | Headline: ${! this.ai_response.headline_txt} | Summary: ${! this.ai_response.summary_txt.string() }'
+                message: '[🧠 LLM BACKFILL] story_id: ${! this.story_id } | dt: ${! this.dt } | Headline: ${! this.ai_response.headline_txt}'
 
 output:
-  label: load_dds_s_story_daily_summaries
-  broker:
-    pattern: fan_out
-    outputs:
-      - label: out_postgres
-        sql_raw:
-          driver: postgres
-          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-          query: |
-            INSERT INTO dds.s_story_daily_summaries (
-              story_id, dt, model_nm, language_code, headline_txt, summary_txt
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (story_id, dt, model_nm, language_code) DO UPDATE SET
-              _loaded_dttm = now(),
-              headline_txt = EXCLUDED.headline_txt,
-              summary_txt = EXCLUDED.summary_txt
-          args_mapping: |
-            root = [
-              this.story_id,
-              this.dt,
-              "deepseek-v4-flash:cloud",
-              this.language_code,
-              this.headline_txt,
-              this.summary_txt
-            ]
-          batching:
-            count: 10
-            period: 1s
+  label: reload_dds_s_story_daily_summaries
+  sql_raw:
+    driver: postgres
+    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    query: |
+      INSERT INTO dds.s_story_daily_summaries (
+        story_id, dt, model_nm, language_code, headline_txt, summary_txt
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (story_id, dt, model_nm, language_code) DO NOTHING
+    args_mapping: |
+      root = [
+        this.story_id,
+        this.dt,
+        "deepseek-v4-flash:cloud",
+        this.language_code,
+        this.headline_txt,
+        this.summary_txt
+      ]
+    batching:
+      count: 10
+      period: 1s
 
-        processors:
-          - mapping: |
-              root = if this.ai_response == null || this.ai_response == ""{ deleted() } else { this }
-          - mapping: |
-              let model = "deepseek-v4-flash:cloud"
-              
-              root = {
-                "story_id": this.story_id.string(),
-                "dt": this.dt.string(),
-                "language_code": this.language_code.string(),
-                "headline_txt": this.ai_response.headline_txt.string(),
-                "summary_txt": this.ai_response.summary_txt.string(),
-                "model_nm": $model
-              }
+  processors:
+    - mapping: |
+        root = if this.ai_response == null || this.ai_response == "" { deleted() } else { this }
+    - mapping: |
+        root = {
+          "story_id": this.story_id.string(),
+          "dt": this.dt.string(),
+          "language_code": this.language_code.string(),
+          "headline_txt": this.ai_response.headline_txt.string(),
+          "summary_txt": this.ai_response.summary_txt.string()
+        }

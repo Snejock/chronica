@@ -14,6 +14,7 @@ pipeline:
         - log:
             level: ERROR
             message: "Error decoding avro: ${! error() }"
+        - mapping: 'root = deleted()'
 
     # Оставляем только новости на английском языке
     - mapping: |
@@ -47,7 +48,7 @@ pipeline:
             - reach_idx (string) — экспоненциальная оценка количества людей, на которых повлияет новость (1k, 10k, 100k, 1m, 10m, 100m, 1b, 10b)
             - impact_scr (integer) — сила влияния новости на жизнь одного человека (1 — шум, 100 — фундаментальные изменения)
             - duration_days (integer) — прогноз длительности эффекта новости в днях (1, 7, 30, 90, 180, 365, 3650, 36500)
-            - scale_nm (string) — географический охват. Строго одно из следующих значений:
+            - geoscale_nm (string) — географический охват. Строго одно из следующих значений:
               * "local" — локальное влияние новости (город, штат, область)
               * "national" — влияние в пределах одной страны
               * "regional" — влияние на несколько стран одного региона (например, Европа, Ближний Восток)
@@ -98,7 +99,7 @@ pipeline:
                   "type": "integer",
                   "description": "Duration of the news effect in days (1, 7, 30, 90, 180, 365, 3650, 36500)"
                 },
-                "scale_nm": {
+                "geoscale_nm": {
                   "type": "string", 
                   "enum": ["local", "national", "regional", "global"],
                   "description": "Scale of the news impact (local, national, regional, global)"
@@ -112,7 +113,7 @@ pipeline:
                   "description": "Short explanation of the impact in Russian"
                 }
               },
-              "required": ["reach_idx", "impact_scr", "duration_days", "scale_nm", "confidence_prt", "reason_txt"]
+              "required": ["reach_idx", "impact_scr", "duration_days", "geoscale_nm", "confidence_prt", "reason_txt"]
             }
           }
 
@@ -154,14 +155,14 @@ output:
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
             INSERT INTO dds.s_news_reactions (
-              news_id, model_nm, reach_idx, impact_scr, duration_days, scale_nm, confidence_prt, language_code, reason_txt
+              news_id, model_nm, reach_idx, impact_scr, duration_days, geoscale_nm, confidence_prt, language_code, reason_txt
             ) VALUES (xxh64($1), $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (news_id, model_nm, language_code) DO UPDATE SET
               _loaded_dttm = now(),
               reach_idx = EXCLUDED.reach_idx,
               impact_scr = EXCLUDED.impact_scr,
               duration_days = EXCLUDED.duration_days,
-              scale_nm = EXCLUDED.scale_nm,
+              geoscale_nm = EXCLUDED.geoscale_nm,
               confidence_prt = EXCLUDED.confidence_prt,
               reason_txt = EXCLUDED.reason_txt;
           args_mapping: |
@@ -171,7 +172,7 @@ output:
               this.reach_idx,
               this.impact_scr,
               this.duration_days,
-              this.scale_nm,
+              this.geoscale_nm,
               this.confidence_prt,
               this.language_code,
               this.reason_txt
@@ -192,7 +193,7 @@ output:
                 "reach_idx": this.reaction.reach_idx.string(),
                 "impact_scr": this.reaction.impact_scr.number(),
                 "duration_days": this.reaction.duration_days.number(),
-                "scale_nm": this.reaction.scale_nm.string(),
+                "geoscale_nm": this.reaction.geoscale_nm.string(),
                 "confidence_prt": this.reaction.confidence_prt.number(),
                 "language_code": "ru",
                 "reason_txt": this.reaction.reason_txt.string().catch("")

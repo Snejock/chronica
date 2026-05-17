@@ -5,20 +5,19 @@ input:
 
 pipeline:
   processors:
-    # 1. Запрос в БД для поиска новостей без перевода.
-    # ВАЖНО: Замените 'ods.rss_news' на реальную таблицу, откуда можно взять сырой link
-    - label: poodsres
+    - label: postgres
       sql_raw:
-        driver: poodsres
-        dsn: poodsres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
           SELECT h.news_link, t.language_code, t.title_txt, t.summary_txt
           FROM dds.s_news_texts t
-          JOIN dds.h_rss_news h ON t.news_id = h.news_id
+          JOIN dds.h_news h ON t.news_id = h.news_id
           WHERE language_code = 'en'
             AND NOT EXISTS (SELECT 1
                             FROM dds.s_news_embeddings e
                             WHERE e.news_id = t.news_id)
+          LIMIT 50
 
     # unarchive разбивает этот массив на отдельные сообщения.
     - unarchive:
@@ -47,10 +46,10 @@ pipeline:
         result_map: |
           root.embedding = this.embedding
 
-    # логирование результата перевода
     - mapping: |
-        root = if this.embedding == null {throw("Failed to get embedding")} else {this}
+        root = if this.embedding == null { deleted() } else { this }
 
+    - mapping: |
         let vec_size = this.embedding.length().string() + " dims"
         meta log_msg = "[✅ BACKFILL EMBEDDED] Link: %s | %s | Vct: %s | Title: %s".format(
           this.news_link.string(), this.language_code.string(), $vec_size, this.title_txt.string()
@@ -65,10 +64,10 @@ output:
   broker:
     pattern: fan_out
     outputs:
-      - label: out_poodsres
+      - label: out_postgres
         sql_raw:
-          driver: poodsres
-          dsn: poodsres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
             INSERT INTO dds.s_news_embeddings (
               news_id, model_nm, embedding_vct

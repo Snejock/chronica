@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS dds.s_story_daily_summaries;
+-- DROP TABLE IF EXISTS dds.s_story_daily_summaries;
 
 CREATE TABLE IF NOT EXISTS dds.s_story_daily_summaries (
     _loaded_dttm  timestamp(0) with time zone default now(),

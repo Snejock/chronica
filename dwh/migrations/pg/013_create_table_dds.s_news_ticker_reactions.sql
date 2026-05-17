@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS dds.s_news_ticker_reactions;
+-- DROP TABLE IF EXISTS dds.s_news_ticker_reactions;
 
 CREATE TABLE IF NOT EXISTS dds.s_news_ticker_reactions (
     _loaded_dttm    timestamp(0) with time zone DEFAULT now(),

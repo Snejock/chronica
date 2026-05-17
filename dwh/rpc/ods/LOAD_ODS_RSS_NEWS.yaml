@@ -9,6 +9,11 @@ pipeline:
     - label: decode
       schema_registry_decode:
         url: "http://dwh-rp-1:8081"
+    - catch:
+        - log:
+            level: ERROR
+            message: "Error decoding avro: ${! error() }"
+        - mapping: 'root = deleted()'
 
     - label: dedupe
       dedupe:

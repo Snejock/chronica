@@ -6,10 +6,10 @@ input:
 pipeline:
   processors:
     # получение новостей без перевода.
-    - label: poodsres
+    - label: postgres
       sql_raw:
-        driver: poodsres
-        dsn: poodsres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
           WITH
             news AS (
@@ -30,7 +30,7 @@ pipeline:
               , n.title_txt       AS title
               , n.summary_txt     AS summary
           FROM news n
-          JOIN dds.h_rss_news h ON n.news_id = h.news_id
+          JOIN dds.h_news h ON n.news_id = h.news_id
           UNION ALL
           -- новости без перевода
           SELECT
@@ -54,6 +54,10 @@ pipeline:
     # unarchive разбивает этот массив на отдельные сообщения
     - unarchive:
         format: json_array
+
+    # удаление, если язык не удалось определить
+    - mapping: |
+        root = if this.language_code == null || this.language_code == "unknown" || this.language_code == "" { deleted() } else { this }
 
     # установка флагов перевода
     - mapping: |
@@ -136,19 +140,30 @@ pipeline:
         message: '${! meta("log_msg") }'
 
     - mapping: |
-        if this.translated_title_en != null {
-          root.link = this.link
-          root.language_code = "en"
-          root.title = this.translated_title_en
-          root.summary = this.translated_summary_en
-        } else if this.translated_title_ru != null {
-          root.link = this.link
-          root.language_code = "ru"
-          root.title = this.translated_title_ru
-          root.summary = this.translated_summary_ru
-        } else {
-          root = deleted()
+        root = []
+
+        if this.translated_title_en != null && this.translated_summary_en != null {
+          root = root.append({
+            "link": this.link,
+            "language_code": "en",
+            "title": this.translated_title_en,
+            "summary": this.translated_summary_en
+          })
         }
+
+        if this.translated_title_ru != null && this.translated_summary_ru != null {
+          root = root.append({
+            "link": this.link,
+            "language_code": "ru",
+            "title": this.translated_title_ru,
+            "summary": this.translated_summary_ru
+          })
+        }
+
+        root = if root.length() == 0 { deleted() } else { root }
+
+    - unarchive:
+        format: json_array
 
     - mapping: |
         meta key = this.link.string().or("")
@@ -158,10 +173,10 @@ output:
   broker:
     pattern: fan_out
     outputs:
-      - label: out_poodsres
+      - label: out_postgres
         sql_raw:
-          driver: poodsres
-          dsn: poodsres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
             INSERT INTO dds.s_news_texts (
               news_id, language_code, title_txt, summary_txt
@@ -198,3 +213,4 @@ output:
             - log:
                 level: ERROR
                 message: "❌ AVRO ENCODE FAILED: ${! error() }"
+            - mapping: 'root = deleted()'

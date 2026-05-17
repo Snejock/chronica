@@ -16,6 +16,10 @@ pipeline:
             message: "Error decoding avro: ${! error() }"
         - mapping: 'root = deleted()'
 
+    # удаление, если новость не на английском языке
+    - mapping: |
+        root = if this.language_code != "en" { deleted() } else { this }
+
     # выполнение проверки, была ли новость обработана ранее
     - branch:
         processors:
@@ -28,10 +32,6 @@ pipeline:
 
     - mapping: |
         root = if meta("is_processed") == "true" { deleted() } else { this }
-
-    # удаление, если новость не на английском языке
-    - mapping: |
-        root = if this.language_code != "en" { deleted() } else { this }
 
     # выполнение проверки, есть ли эмбеддинг новости в БД
     - branch:
@@ -78,9 +78,10 @@ pipeline:
         result_map: |
           root.embedding = this.embedding
 
-    # логирование результата перевода
     - mapping: |
-        root = if this.embedding == null {throw("Failed to get embedding")} else { this }
+        root = if this.embedding == null { deleted() } else { this }
+
+    - mapping: |
         let vec_size = this.embedding.length().string() + " dims"
         meta log_msg = "[✅ EMBEDDED] Link: %s | %s | Vct: %s | Title: %s".format(
           this.news_link.string(), this.language_code.string(), $vec_size, this.title_txt.string()
