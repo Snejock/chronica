@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS ods.kafka_rss_news
 (
     source_system   LowCardinality(String),
-    published_utc   DateTime,
+    published_dttm   DateTime,
     feed_id         Int32,
     feed_nm         LowCardinality(String),
     title           String,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS ods.rss_news
     loaded              DateTime DEFAULT now(),
     source_system       LowCardinality(String),
     news_id             UInt64,
-    published_utc       DateTime,
+    published_dttm       DateTime,
     feed_id             Int32,
     feed_nm             LowCardinality(String),
     title               String,
@@ -36,7 +36,7 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS ods.mv_rss_news TO ods.rss_news AS
     SELECT
         source_system,
         xxHash64(link)          AS news_id,
-        published_utc,
+        published_dttm,
         feed_id,
         feed_nm,
         title,

@@ -15,7 +15,7 @@ pipeline:
                 SELECT
                     story_id,
                     story_nm,
-                    published_utc::date AS dt,
+                    (published_dttm AT TIME ZONE 'UTC')::date AS dt,
                     s.language_code,
                     jsonb_strip_nulls(jsonb_build_object(
                         'story_nm', story_nm,
@@ -29,7 +29,7 @@ pipeline:
                 FROM dm.uniq_news_stories s
                 LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id AND r.language_code = s.language_code
                 WHERE s.language_code = 'ru'
-                  AND s.published_utc BETWEEN current_date - INTERVAL '2' DAY AND current_date
+                  AND s.published_dttm BETWEEN current_date - INTERVAL '2' DAY AND current_date
               )
           SELECT
             story_id

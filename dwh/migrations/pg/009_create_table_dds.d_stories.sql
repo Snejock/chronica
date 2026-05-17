@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS dds.d_stories (
-    _loaded_dttm    timestamp(0) DEFAULT now(),
+    _loaded_dttm    timestamp(0) with time zone DEFAULT now(),
     story_id        integer,
     story_nm        text,
     storyline_txt   text,

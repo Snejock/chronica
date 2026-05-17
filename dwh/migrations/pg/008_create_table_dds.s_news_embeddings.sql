@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS dds.s_news_embeddings (
-    _loaded_dttm    timestamp(0) DEFAULT now(),
+    _loaded_dttm    timestamp(0) with time zone DEFAULT now(),
     news_id         text NOT NULL,
     model_nm        text NOT NULL,
     embedding_vct   vector(768),

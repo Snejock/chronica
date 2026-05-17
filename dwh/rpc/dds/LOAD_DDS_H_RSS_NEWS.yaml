@@ -40,7 +40,7 @@ output:
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
             INSERT INTO dds.h_rss_news (
-              _source_system, news_id, news_link, published_utc, feed_id
+              _source_system, news_id, news_link, published_dttm, feed_id
             ) VALUES (
               $1,
               xxh64($2),

@@ -17,7 +17,7 @@ WITH
         FROM dm.uniq_news un
         JOIN story s ON un.embedding_vct <=> s.embedding_vct < 0.52)
 SELECT
-    published_utc
+    published_dttm
     , story_id
     , story_nm
     , feed_nm
@@ -30,5 +30,5 @@ SELECT
       END AS news_txt
 FROM news
 WHERE rn = 1
-ORDER BY published_utc DESC
+ORDER BY published_dttm DESC
 ;

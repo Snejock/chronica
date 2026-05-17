@@ -13,15 +13,15 @@ WITH uniq_news AS (
                             JOIN dds.s_news_embeddings ne2 ON h2.news_id = ne2.news_id
                             WHERE ne.model_nm = ne2.model_nm
                               AND ne.news_id <> ne2.news_id
-                              AND h.published_utc >= h2.published_utc - INTERVAL '1 day'
-                              AND h.published_utc > h2.published_utc
+                              AND h.published_dttm >= h2.published_dttm - INTERVAL '1 day'
+                              AND h.published_dttm > h2.published_dttm
                             ORDER BY ne.embedding_vct <=> ne2.embedding_vct
                             LIMIT 1) closest_match
                       WHERE ne.embedding_vct <=> closest_match.embedding_vct < 0.20)
 )
 SELECT
     u.news_id
-    , h.published_utc
+    , h.published_dttm
     , d.feed_nm
     , s.language_code
     , s.title_txt

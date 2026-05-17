@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS dds.h_news (
-    _loaded_dttm    timestamp(0) DEFAULT now(),
+    _loaded_dttm    timestamp(0) with time zone DEFAULT now(),
     _source_system  text,
     news_id         text PRIMARY KEY,
     news_link       text,
-    published_utc   timestamp(0),
+    published_dttm   timestamp(0) with time zone,
     feed_id         integer
 );

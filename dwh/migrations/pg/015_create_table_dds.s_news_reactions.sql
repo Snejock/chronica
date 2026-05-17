@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS dds.s_news_reactions;
 
 CREATE TABLE IF NOT EXISTS dds.s_news_reactions (
-    _loaded_dttm    timestamp(0) with time zone default now(),
+    _loaded_dttm    timestamp(0) with time zone DEFAULT now(),
     news_id         text NOT NULL,
     model_nm        text NOT NULL,
     reach_idx       text,
@@ -12,5 +12,6 @@ CREATE TABLE IF NOT EXISTS dds.s_news_reactions (
     language_code   text NOT NULL,
     reason_txt      text,
 
-    PRIMARY KEY (news_id, model_nm, language_code)
+    CONSTRAINT s_news_reactions_pkey
+        PRIMARY KEY (news_id, model_nm, language_code)
 );

@@ -1,5 +1,5 @@
 SELECT
-    published_utc
+    published_dttm
     , feed_nm
     , language_code
     , title_txt
