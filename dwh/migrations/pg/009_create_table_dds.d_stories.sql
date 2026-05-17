@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS dtl.d_stories (
+CREATE TABLE IF NOT EXISTS dds.d_stories (
     _loaded_dttm    timestamp(0) DEFAULT now(),
     story_id        integer,
     story_nm        text,
@@ -10,3 +10,5 @@ CREATE TABLE IF NOT EXISTS dtl.d_stories (
     CONSTRAINT d_stories_pkey
         PRIMARY KEY (story_id, storyline_txt, model_nm)
 );
+
+CREATE INDEX IF NOT EXISTS d_stories_embedding_idx ON dds.d_stories USING hnsw (embedding_vct vector_cosine_ops);

@@ -5,11 +5,11 @@ input:
 
 pipeline:
   processors:
-    # 1. Запрос в БД для поиска новостей без перевода.
-    # ВАЖНО: Замените 'stg.rss_news' на реальную таблицу, откуда можно взять сырой link
-    - sql_raw:
-        driver: postgres
-        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    # получение новостей без перевода.
+    - label: poodsres
+      sql_raw:
+        driver: poodsres
+        dsn: poodsres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
           WITH
             news AS (
@@ -19,7 +19,7 @@ pipeline:
                     , min(title_txt) AS title_txt
                     , min(summary_txt) AS summary_txt
                     , count(*) AS cnt
-                FROM dtl.s_rss_news_texts
+                FROM dds.s_news_texts
                 GROUP BY news_id
                 HAVING count(*) = 1)
           -- новости с одним переводом
@@ -30,7 +30,7 @@ pipeline:
               , n.title_txt       AS title
               , n.summary_txt     AS summary
           FROM news n
-          JOIN dtl.h_rss_news h ON n.news_id = h.news_id
+          JOIN dds.h_rss_news h ON n.news_id = h.news_id
           UNION ALL
           -- новости без перевода
           SELECT
@@ -39,23 +39,23 @@ pipeline:
               , d.language_code
               , title
               , summary
-          FROM (SELECT xxh64(stg.link) AS news_id
-                     , stg.link        AS link
-                     , stg.feed_id     AS feed_id
-                     , stg.title       AS title
-                     , stg.summary     AS summary
-                FROM stg.rss_news stg
+          FROM (SELECT xxh64(ods.link) AS news_id
+                     , ods.link        AS link
+                     , ods.feed_id     AS feed_id
+                     , ods.title       AS title
+                     , ods.summary     AS summary
+                FROM ods.rss_news ods
                 WHERE NOT EXISTS (SELECT 1
-                                  FROM dtl.s_rss_news_texts s
-                                  WHERE xxh64(stg.link) = s.news_id)) AS t
-          LEFT JOIN dtl.d_rss_feeds d ON t.feed_id = d.feed_id
+                                  FROM dds.s_news_texts s
+                                  WHERE xxh64(ods.link) = s.news_id)) AS t
+          LEFT JOIN dds.d_rss_feeds d ON t.feed_id = d.feed_id
           LIMIT 50
 
-    # unarchive разбивает этот массив на отдельные сообщения.
+    # unarchive разбивает этот массив на отдельные сообщения
     - unarchive:
         format: json_array
 
-    # 3. Установка флагов перевода
+    # установка флагов перевода
     - mapping: |
         root = this
         root.is_ru_translation_needed = this.language_code != "ru"
@@ -76,7 +76,8 @@ pipeline:
           } else { deleted() }
         processors:
           - try:
-              - http:
+              - label: http_translate_en
+                http:
                   url: "http://dwh-ol-1:11434/api/generate"
                   verb: POST
                   headers: {Content-Type: "application/json"}
@@ -104,11 +105,12 @@ pipeline:
           } else { deleted() }
         processors:
           - try:
-            - http:
-                url: "http://dwh-ol-1:11434/api/generate"
-                verb: POST
-                headers: { Content-Type: "application/json" }
-                timeout: 5m
+              - label: http_translate_ru
+                http:
+                  url: "http://dwh-ol-1:11434/api/generate"
+                  verb: POST
+                  headers: { Content-Type: "application/json" }
+                  timeout: 5m
           - mapping: |
               let result = this.response.parse_json().catch(null)
               root.translated_title = if $result != null { $result.title } else { null }
@@ -148,20 +150,20 @@ pipeline:
           root = deleted()
         }
 
-    # Добавляем ключ для Kafka
     - mapping: |
         meta key = this.link.string().or("")
 
 output:
+  label: reload_dds_s_news_texts
   broker:
     pattern: fan_out
     outputs:
-      - label: load_dtl_s_rss_news_texts_backfill_pg
+      - label: out_poodsres
         sql_raw:
-          driver: postgres
-          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          driver: poodsres
+          dsn: poodsres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dtl.s_rss_news_texts (
+            INSERT INTO dds.s_news_texts (
               news_id, language_code, title_txt, summary_txt
             ) VALUES (xxh64($1), $2, $3, $4)
             ON CONFLICT (news_id, language_code) DO NOTHING;
@@ -176,10 +178,10 @@ output:
             count: 5
             period: 1s
 
-      - label: load_dtl_s_rss_news_texts_backfill_rp
+      - label: out_redpanda
         redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
-          topic: "dtl_s_rss_news_texts"
+          topic: "dds_s_news_texts"
           key: '${! meta("key") }'
         processors:
           - mapping: |
@@ -187,12 +189,10 @@ output:
               root.language_code = this.language_code.string().or("unknown")
               root.title_txt = this.title.string().or("")
               root.summary_txt = this.summary.string().or("")
-
-          # Добавлен try/catch для отслеживания ошибок реестра схем
           - try:
             - schema_registry_encode:
                 url: "http://dwh-rp-1:8081"
-                subject: "dtl_s_rss_news_texts-value"
+                subject: "dds_s_news_texts-value"
                 avro_raw_json: true
           - catch:
             - log:

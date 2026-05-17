@@ -13,7 +13,21 @@ wheels/
 .venv
 
 # Environments
-.env*
+.env
 
 # Logs
 *.log*
+
+# Temporary
+
+# DBT
+dwh/dbt/target/
+dwh/dbt/dbt_packages/
+dwh/dbt/logs/
+
+# Evidence
+evidence/
+evidence/node_modules/
+evidence/build/
+evidence/.svelte-kit/
+evidence/.env

@@ -1,29 +1,30 @@
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
-    topics: ["dtl_s_rss_news_texts"]
-    consumer_group: "LOAD_DTL_S_RSS_NEWS_EMBEDDINGS"
+    topics: ["dds_s_news_texts"]
+    consumer_group: "LOAD_DDS_S_NEWS_EMBEDDINGS"
 
 pipeline:
   threads: 1
   processors:
-    - schema_registry_decode:
+    - label: decode
+      schema_registry_decode:
         url: "http://dwh-rp-1:8081"
     - catch:
         - log:
             level: ERROR
             message: "Error decoding avro: ${! error() }"
+        - mapping: 'root = deleted()'
 
     # выполнение проверки, была ли новость обработана ранее
     - branch:
         processors:
-          - cache:
+          - label: redis_check
+            cache:
               resource: redis_cache
-              operator: get
-              key: "processed:dtl.s_rss_news_embeddings:${! this.news_link }:${! this.language_code.string().or(\"unknown\") }"
-        # если ключ найден, cache заменит payload, branch завершится успешно
-        # если не найден, branch упадет, result_map будет пропущен
-        result_map: 'meta is_processed = "true"'
+              operator: exists
+              key: "processed:dds.s_news_embeddings:${! this.news_link }:${! this.language_code.string().or(\"unknown\") }"
+        result_map: 'meta is_processed = content().string().catch("false")'
 
     - mapping: |
         root = if meta("is_processed") == "true" { deleted() } else { this }
@@ -35,11 +36,12 @@ pipeline:
     # выполнение проверки, есть ли эмбеддинг новости в БД
     - branch:
         processors:
-          - sql_raw:
+          - label: postgres
+            sql_raw:
               driver: postgres
               dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
               query: |
-                SELECT 1 FROM dtl.s_rss_news_embeddings 
+                SELECT 1 FROM dds.s_news_embeddings 
                 WHERE news_id = xxh64($1) AND model_nm = $2
               args_mapping: |
                 root = [
@@ -62,12 +64,15 @@ pipeline:
             "options": {"temperature": 0.0, "top_p": 0.1}
           }
         processors:
-          - http:
+          - label: http
+            http:
               url: "http://dwh-ol-1:11434/api/embed"
               verb: POST
               headers:
                 Content-Type: "application/json"
               timeout: 1m
+              retries: 3
+              retry_period: "5s"
           - mapping: |
               root.embedding = this.embeddings.0
         result_map: |
@@ -75,12 +80,7 @@ pipeline:
 
     # логирование результата перевода
     - mapping: |
-        root = if this.embedding == null { 
-          throw("Failed to get embedding") 
-        } else { 
-          this 
-        }
-       
+        root = if this.embedding == null {throw("Failed to get embedding")} else { this }
         let vec_size = this.embedding.length().string() + " dims"
         meta log_msg = "[✅ EMBEDDED] Link: %s | %s | Vct: %s | Title: %s".format(
           this.news_link.string(), this.language_code.string(), $vec_size, this.title_txt.string()
@@ -91,15 +91,16 @@ pipeline:
         message: '${! meta("log_msg") }'
 
 output:
+  label: load_dds_s_news_embeddings
   broker:
     pattern: fan_out
     outputs:
-      - label: load_dtl_s_rss_news_embeddings_pg
+      - label: out_postgres
         sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dtl.s_rss_news_embeddings (
+            INSERT INTO dds.s_news_embeddings (
               news_id, model_nm, embedding_vct
             ) VALUES (xxh64($1), $2, $3::vector)
             ON CONFLICT (news_id, model_nm) DO NOTHING;
@@ -113,6 +114,7 @@ output:
             count: 5
             period: 1s
 
-      - cache:
+      - label: out_redis
+        cache:
           target: redis_cache
-          key: "processed:dtl.s_rss_news_embeddings:${! this.news_link }:${! this.language_code.string().or(\"unknown\") }"
+          key: "processed:dds.s_news_embeddings:${! this.news_link }:${! this.language_code.string().or(\"unknown\") }"

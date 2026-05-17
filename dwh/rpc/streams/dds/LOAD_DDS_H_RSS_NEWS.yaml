@@ -2,7 +2,7 @@ input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
     topics: ["stg_rss_news"]
-    consumer_group: "LOAD_DTL_H_RSS_NEWS"
+    consumer_group: "LOAD_DDS_H_RSS_NEWS"
 
 pipeline:
   processors:
@@ -23,25 +23,23 @@ pipeline:
                 cache:
                   resource: redis_cache
                   operator: exists
-                  key: "processed:dtl.h_rss_news:${! this.link.string() }"
-        result_map: |
-          meta is_processed = content().string().catch("")
+                  key: "processed:dds.h_rss_news:${! this.link.string() }"
+        result_map: 'meta is_processed = content().string().catch("false")'
 
-    - label: map
-      mapping: |
-        root = if meta("is_processed").or("") != "" { deleted() } else { this }        
+    - mapping: |
+        root = if meta("is_processed") == "true" { deleted() } else { this }
 
 output:
-  label: out_dtl_h_rss_news
+  label: out_dds_h_rss_news
   broker:
     pattern: fan_out
     outputs:
-      - label: postgres
+      - label: out_postgres
         sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dtl.h_rss_news (
+            INSERT INTO dds.h_rss_news (
               _source_system, news_id, news_link, published_utc, feed_id
             ) VALUES (
               $1,
@@ -64,7 +62,7 @@ output:
             count: 100
             period: 1s
 
-      - label: redis
+      - label: out_redis
         cache:
           target: redis_cache
-          key: "processed:dtl.h_rss_news:${! this.link.string() }"
+          key: "processed:dds.h_rss_news:${! this.link.string() }"

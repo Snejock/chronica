@@ -1,4 +1,3 @@
-CREATE OR REPLACE VIEW dm.rss_feeds AS
 SELECT
     feed_id
     , feed_nm
@@ -7,7 +6,5 @@ SELECT
     , country_code
     , city_nm
     , language_code
-    , interval_sec
-    , is_active
-FROM dds.d_rss_feeds
-;
+FROM dwh_pg_1.rss_feeds
+WHERE is_active

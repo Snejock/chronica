@@ -2,12 +2,13 @@ input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
     topics: ["stg_rss_news"]
-    consumer_group: "LOAD_DTL_S_RSS_NEWS_TEXTS"
+    consumer_group: "LOAD_DDS_S_NEWS_TEXTS"
 
 pipeline:
   # threads: 4
   processors:
-    - schema_registry_decode:
+    - label: decode
+      schema_registry_decode:
         url: "http://dwh-rp-1:8081"
     - catch:
         - log:
@@ -18,23 +19,25 @@ pipeline:
     - branch:
         processors:
           - try:
-              - cache:
+              - label: redis_check_news
+                cache:
                   resource: redis_cache
-                  operator: get
-                  key: "processed:dtl.s_rss_news_texts:${! this.link.string() }:${! this.language_code.string().or(\"unknown\") }"
-        result_map: 'meta is_processed = content().string().catch("")'
+                  operator: exists
+                  key: "processed:dds.s_news_texts:${! this.link.string() }:${! this.language_code.string().or(\"unknown\") }"
+        result_map: 'meta is_processed = content().string().catch("false")'
 
     - mapping: |
-        root = if meta("is_processed").or("") != "" { deleted() } else { this }
+        root = if meta("is_processed") == "true" { deleted() } else { this }
 
     # получение из кэша language_code для this.feed_id
     - branch:
         processors:
           - try:
-              - cache:
+              - label: redis_check_feed
+                cache:
                   resource: redis_cache
                   operator: get
-                  key: "lookup:dtl.d_rss_feeds:${! this.feed_id }"
+                  key: "lookup:dds.d_rss_feeds:${! this.feed_id }"
         result_map: 'root.language_code = content().string().catch("")'
 
     # получение из базы (при отсутствии в кэше) значения language_code для this.feed_id
@@ -42,10 +45,11 @@ pipeline:
         request_map: |
           root = if this.language_code == null || this.language_code == "" { this } else { deleted() }
         processors:
-          - sql_raw:
+          - label: postgres_feed
+            sql_raw:
               driver: postgres
               dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-              query: "SELECT feed_id, language_code FROM dtl.d_rss_feeds WHERE feed_id = $1"
+              query: "SELECT feed_id, language_code FROM dds.d_rss_feeds WHERE feed_id = $1"
               args_mapping: "root = [this.feed_id]"
           # добавление значения language_code в кэш
           - branch:
@@ -55,17 +59,18 @@ pipeline:
                 - cache:
                     resource: redis_cache
                     operator: set
-                    key: 'lookup:dtl.d_rss_feeds:${! this.index(0).feed_id.string() }'
+                    key: 'lookup:dds.d_rss_feeds:${! this.index(0).feed_id.string() }'
                     value: '${! this.index(0).language_code.string() }'
         result_map: 'root.language_code = this.index(0).language_code.catch("unknown")'
 
     # получение списка уже существующих переводов для этой новости из БД
     - branch:
         processors:
-          - sql_raw:
+          - label: postgres_languages
+            sql_raw:
               driver: postgres
               dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-              query: "SELECT language_code FROM dtl.s_rss_news_texts WHERE news_id = xxh64($1)"
+              query: "SELECT language_code FROM dds.s_news_texts WHERE news_id = xxh64($1)"
               args_mapping: "root = [this.link.string()]"
         # Сохраняем массив найденных языков (например: ["en", "ru"] или [])
         result_map: |
@@ -110,12 +115,15 @@ pipeline:
           } else { deleted() }
         processors:
           - try:
-              - http:
+              - label: http_translate_en
+                http:
                   url: "http://dwh-ol-1:11434/api/generate"
                   verb: POST
                   headers:
                     Content-Type: "application/json"
-                  timeout: 5m
+                  timeout: 3m
+                  retries: 3
+                  retry_period: "5s"
           - mapping: |
               let result = this.response.parse_json().catch(null)
               root.translated_title = if $result != null { $result.title } else { null }
@@ -157,12 +165,15 @@ pipeline:
           } else { deleted() }
         processors:
           - try:
-              - http:
+              - label: http_translate_ru
+                http:
                   url: "http://dwh-ol-1:11434/api/generate"
                   verb: POST
                   headers:
                     Content-Type: "application/json"
-                  timeout: 1m
+                  timeout: 3m
+                  retries: 3
+                  retry_period: "5s"
           - mapping: |
               let result = this.response.parse_json().catch(null)
               root.translated_title = if $result != null { $result.title } else { null }
@@ -251,15 +262,16 @@ pipeline:
         meta key = this.link.string().or("")
 
 output:
+  label: load_dds_s_news_texts
   broker:
     pattern: fan_out
     outputs:
-      - label: load_dtl_s_rss_news_texts_pg
+      - label: out_postgres
         sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dtl.s_rss_news_texts (
+            INSERT INTO dds.s_news_texts (
               news_id, language_code, title_txt, summary_txt
             ) VALUES (xxh64($1), $2, $3, $4)
             ON CONFLICT (news_id, language_code) DO NOTHING;
@@ -274,11 +286,10 @@ output:
             count: 5
             period: 1s
 
-      # запись в брокер
-      - label: load_dtl_s_rss_news_texts_rp
+      - label: out_redpanda
         redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
-          topic: "dtl_s_rss_news_texts"
+          topic: "dds_s_news_texts"
           key: '${! meta("key") }'
         processors:
           - mapping: |
@@ -286,12 +297,12 @@ output:
               root.language_code = this.language_code.string().or("unknown")
               root.title_txt = this.title.string().or("")
               root.summary_txt = this.summary.string().or("")
-
           - schema_registry_encode:
               url: "http://dwh-rp-1:8081"
-              subject: "dtl_s_rss_news_texts-value"
+              subject: "dds_s_news_texts-value"
               avro_raw_json: true
 
-      - cache:
+      - label: out_redis
+        cache:
           target: redis_cache
-          key: "processed:dtl.s_rss_news_texts:${! this.link.string() }:${! this.language_code.string().or(\"unknown\") }"
+          key: "processed:dds.s_news_texts:${! this.link.string() }:${! this.language_code.string().or(\"unknown\") }"

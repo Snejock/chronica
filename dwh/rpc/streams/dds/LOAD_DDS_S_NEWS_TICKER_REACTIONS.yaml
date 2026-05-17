@@ -1,37 +1,38 @@
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
-    topics: ["dtl_s_rss_news_texts"]
-    consumer_group: "LOAD_DTL_S_RSS_NEWS_TICKER_REACTIONS"
+    topics: ["dds_s_news_texts"]
+    consumer_group: "LOAD_DDS_S_NEWS_TICKER_REACTIONS"
 
 pipeline:
   processors:
-    - schema_registry_decode:
+    - label: decode
+      schema_registry_decode:
         url: "http://dwh-rp-1:8081"
     - catch:
         - log:
             level: ERROR
             message: "Error decoding avro: ${! error() }"
 
-    # Оставляем только новости на английском языке
     - mapping: |
         root = if this.language_code != "en" { deleted() } else { this }
 
-    # Проверка в кэше: анализировалась ли эта новость ранее
+    # выполнение проверки в кэше, анализировалась ли эта новость ранее
     - branch:
         processors:
           - try:
-              - cache:
+              - label: redis_check
+                cache:
                   resource: redis_cache
-                  operator: get
-                  key: "processed:dtl.s_rss_news_ticker_reactions:${! this.news_link.string() }"
-        result_map: 'meta is_processed = content().string().catch("")'
+                  operator: exists
+                  key: "processed:dds.s_news_ticker_reactions:${! this.news_link.string() }"
+        result_map: 'meta is_processed = content().string().catch("false")'
 
-    # Если новость уже была обработана, удаляем ее из потока
+    # если новость уже была обработана, удаляем ее из потока
     - mapping: |
-        root = if meta("is_processed").or("") != "" { deleted() } else { this }
+        root = if meta("is_processed") == "true" { deleted() } else { this }
 
-    # Обращение к LLM для извлечения тикеров и оценок
+    # обращение к LLM для извлечения тикеров и оценок
     - branch:
         request_map: |
           let ai_model_name = "deepseek-v4-flash:cloud"
@@ -161,7 +162,6 @@ pipeline:
             
             Твой ответ (только JSON, без пояснений):
           """
-
           root = {
             "model": $ai_model_name,
             "stream": false,
@@ -214,7 +214,8 @@ pipeline:
           }
         processors:
           - try:
-              - http:
+              - label: http
+                http:
                   url: "http://dwh-ol-1:11434/api/generate"
                   verb: POST
                   headers:
@@ -234,15 +235,16 @@ pipeline:
                 message: '[🧠 LLM ANALYZED] Link: ${! this.news_link } | Found ${! this.tickers.length() } tickers. Tickers: ${! this.tickers.string() }'
 
 output:
+  label: load_dds_s_news_ticker_reactions
   broker:
     pattern: fan_out
     outputs:
-      - label: load_dtl_s_rss_news_ticker_reactions_pg
+      - label: out_postgres
         sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dtl.s_rss_news_ticker_reactions (
+            INSERT INTO dds.s_news_ticker_reactions (
               news_id, model_nm, ticker_code, category_nm, impact_scr, confidence_prt, language_code, reason_txt
             ) VALUES (xxh64($1), $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (news_id, ticker_code, model_nm, language_code) DO UPDATE SET
@@ -267,7 +269,6 @@ output:
           batching:
             count: 10
             period: 1s
-
         processors:
           - mapping: |
               root = if this.tickers.length().or(0) == 0 { deleted() } else { this }
@@ -289,9 +290,10 @@ output:
           - unarchive:
               format: json_array
 
-      - cache:
+      - label: out_redis
+        cache:
           target: redis_cache
-          key: "processed:dtl.s_rss_news_ticker_reactions:${! this.news_link.string() }"
+          key: "processed:dds.s_news_ticker_reactions:${! this.news_link.string() }"
         processors:
           - mapping: |
               root = if this.tickers.length().or(0) == 0 { deleted() } else { this }

@@ -1,24 +1,27 @@
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
-    topics: ["stg_rss_news"]
-    consumer_group: "LOAD_STG_RSS_NEWS"
+    topics: ["ods_rss_news"]
+    consumer_group: "LOAD_ODS_RSS_NEWS"
 
 pipeline:
   processors:
-    - schema_registry_decode:
+    - label: decode
+      schema_registry_decode:
         url: "http://dwh-rp-1:8081"
 
-    - dedupe:
+    - label: dedupe
+      dedupe:
         cache: redis_cache
-        key: "processed:stg.rss_news:${! this.link }"
+        key: "processed:ods.rss_news:${! this.link }"
 
 output:
+  label: out_poodsres
   sql_raw:
-    driver: postgres
-    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    driver: poodsres
+    dsn: poodsres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
     query: |
-      INSERT INTO stg.rss_news (
+      INSERT INTO ods.rss_news (
         _source_system, published_utc, feed_id, feed_nm, title, summary, link
       ) VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7);
     args_mapping: |

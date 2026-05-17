@@ -1,0 +1,170 @@
+input:
+  generate:
+    interval: "20m"
+    mapping: 'root = {}'
+
+pipeline:
+  processors:
+    - label: postgres
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          WITH
+              news AS (
+                SELECT
+                    story_id,
+                    story_nm,
+                    published_utc::date AS dt,
+                    s.language_code,
+                    jsonb_strip_nulls(jsonb_build_object(
+                        'story_nm', story_nm,
+                        'news_txt', news_txt,
+                        'reach_idx', reach_idx,
+                        'impact_scr', impact_scr,
+                        'duration_days', duration_days,
+                        'scale_nm', scale_nm,
+                        'confidence_prt', confidence_prt,
+                        'reason_txt', reason_txt)) AS description
+                FROM dm.uniq_news_stories s
+                LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id AND r.language_code = s.language_code
+                WHERE s.language_code = 'ru'
+                  AND s.published_utc BETWEEN current_date - INTERVAL '2' DAY AND current_date
+              )
+          SELECT
+            story_id
+            , min(story_nm) AS story_nm
+            , dt
+            , language_code
+            , jsonb_agg(description) AS descriptions
+          FROM news
+          GROUP BY story_id, dt, language_code
+
+    - mapping: |
+        root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
+
+    - unarchive:
+        format: json_array
+
+    - branch:
+        request_map: |
+          let ai_model_name = "deepseek-v4-flash:cloud"
+
+          let system_instruction = """
+            Ты — редактор новостного издания.
+            Твоя задача — проанализировать список новостей за один день по одной теме и вернуть два текста:
+            1. Краткий заголовок дня (headline_txt) — одно предложение, описывающее самое главное событие дня.
+            2. Связный абзац (summary_txt) — 3-5 предложений, обобщающих все ключевые события дня по данной теме.
+
+            Новости всегда присутствуют. Даже если их мало или данные о влиянии отсутствуют — опирайся на поле news_txt и составляй саммари на основе имеющихся данных.
+            При расстановке акцентов учитывай поля reach_idx (масштаб охвата), impact_scr (сила влияния, -100..+100), duration_days (длительность эффекта в днях), scale_nm (масштаб влияния новости), confidence_prt (степень уверенности в наступлении события 0.00 to 1.00) — если они есть.
+
+            Возвращай строго JSON объект с полями headline_txt и summary_txt.
+            Отвечай только на русском языке.
+          """
+
+          let prompt_text = """
+            Сюжет: """ + this.story_nm.string() + """
+            Дата: """ + this.dt.string() + """
+
+            Новости за день:
+            """ + this.descriptions.string() + """
+
+            Твой ответ (только JSON, без пояснений):
+          """
+
+          root = {
+            "model": $ai_model_name,
+            "stream": false,
+            "options": {
+              "temperature": 0.3,
+              "top_p": 0.9
+            },
+            "system": $system_instruction,
+            "prompt": $prompt_text,
+            "format": {
+              "type": "object",
+              "properties": {
+                "headline_txt": {
+                  "type": "string",
+                  "description": "One sentence headline for the day"
+                },
+                "summary_txt": {
+                  "type": "string",
+                  "description": "3-5 sentence summary of the day's events"
+                }
+              },
+              "required": ["headline_txt", "summary_txt"]
+            }
+          }
+        processors:
+          - label: http
+            http:
+              url: "http://dwh-ol-1:11434/api/generate"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
+          - mapping: |
+              let result = this.response.parse_json().catch(null)
+              root.ai_response = if $result != null { $result } else { null }
+        result_map: |
+          root.ai_response = this.ai_response
+
+    - switch:
+        - check: 'this.ai_response != null'
+          processors:
+            - log:
+                level: WARN
+                message: '[🧠 LLM ANALYZED] Link: ${! this.story_id } | Headline: ${! this.ai_response.headline_txt} | Summary: ${! this.ai_response.summary_txt.string() }'
+
+output:
+  label: load_dds_s_story_daily_summaries
+  broker:
+    pattern: fan_out
+    outputs:
+      - label: out_postgres
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_story_daily_summaries (
+              story_id, dt, model_nm, language_code, headline_txt, summary_txt
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (story_id, dt, model_nm, language_code) DO UPDATE SET
+              _loaded_dttm = now(),
+              headline_txt = EXCLUDED.headline_txt,
+              summary_txt = EXCLUDED.summary_txt
+          args_mapping: |
+            root = [
+              this.story_id,
+              this.dt,
+              "deepseek-v4-flash:cloud",
+              this.language_code,
+              this.headline_txt,
+              this.summary_txt
+            ]
+          batching:
+            count: 10
+            period: 1s
+
+        processors:
+          - mapping: |
+              root = if this.ai_response == null || this.ai_response == ""{ deleted() } else { this }
+          - mapping: |
+              let model = "deepseek-v4-flash:cloud"
+              
+              root = {
+                "story_id": this.story_id.string(),
+                "dt": this.dt.string(),
+                "language_code": this.language_code.string(),
+                "headline_txt": this.ai_response.headline_txt.string(),
+                "summary_txt": this.ai_response.summary_txt.string(),
+                "model_nm": $model
+              }
