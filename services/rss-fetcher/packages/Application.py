@@ -151,7 +151,7 @@ class Application:
                 result = await self.pg_provider.fetch(
                     """
                         SELECT max(published_dttm)
-                        FROM stg.rss_news
+                        FROM ods.rss_news
                         WHERE feed_id = $1
                     """,
                     feed.id
