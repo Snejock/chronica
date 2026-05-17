@@ -65,8 +65,8 @@ services:
     command: [
       "streams",
       "-w",
-      "-o", "/etc/redpanda-connect/connect.yml",
-      "-r", "/etc/redpanda-connect/resources.yml",
+      "-o", "/etc/redpanda-connect/connect.yaml",
+      "-r", "/etc/redpanda-connect/resources.yaml",
       "/streams"
     ]
     logging:
@@ -89,9 +89,9 @@ services:
     ports:
       - "38088:8080"
     volumes:
-      - ./config/redpanda-console-config.yml:/etc/redpanda/redpanda-console-config.yml
+      - ./config/redpanda-console-config.yaml:/etc/redpanda/redpanda-console-config.yaml
     environment:
-      CONFIG_FILEPATH: /etc/redpanda/redpanda-console-config.yml
+      CONFIG_FILEPATH: /etc/redpanda/redpanda-console-config.yaml
       REDPANDA_CONSOLE_ANALYTICS_ENABLED: "false"
       LOGIN_ENABLED: "false"
     healthcheck:
