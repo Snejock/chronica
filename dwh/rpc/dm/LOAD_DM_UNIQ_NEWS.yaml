@@ -1,0 +1,20 @@
+input:
+  generate:
+    interval: "20m"
+    mapping: 'root = {}'
+
+pipeline:
+  processors:
+    - label: postgres
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          REFRESH MATERIALIZED VIEW dm.uniq_news;
+
+    - log:
+        level: INFO
+        message: '[✅ REFRESHED] dm.uniq_news'
+
+output:
+  drop: {}
