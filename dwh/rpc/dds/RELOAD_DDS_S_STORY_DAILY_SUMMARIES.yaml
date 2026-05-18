@@ -163,8 +163,8 @@ output:
         root = if this.ai_response == null || this.ai_response == "" { deleted() } else { this }
     - mapping: |
         root = {
-          "story_id": this.story_id.string(),
-          "dt": this.dt.string(),
+          "story_id": this.story_id.number(),
+          "dt": this.dt,
           "language_code": this.language_code.string(),
           "headline_txt": this.ai_response.headline_txt.string(),
           "summary_txt": this.ai_response.summary_txt.string()
