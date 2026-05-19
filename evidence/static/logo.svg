@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" role="img" aria-label="chronica.life">
+  <title>chronica.life</title>
+  <defs>
+    
+  </defs>
+  <circle cx="125" cy="148" r="93" fill="#15140F"></circle>
+  <text x="125" y="190" text-anchor="middle" class="cl-word" font-size="160" fill="#F5F1EA">c</text>
+  <text x="250" y="190" class="cl-word" font-size="168" fill="#15140F" letter-spacing="-3.4">chronica<tspan fill="#86827A">.life</tspan></text>
+</svg>

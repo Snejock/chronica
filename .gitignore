@@ -26,7 +26,6 @@ dwh/dbt/dbt_packages/
 dwh/dbt/logs/
 
 # Evidence
-evidence/
 evidence/node_modules/
 evidence/build/
 evidence/.svelte-kit/
