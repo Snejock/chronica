@@ -1,7 +1,7 @@
 services:
-  dwh-evidence-dev:
+  chr-evidence-dev:
     build: .
-    container_name: dwh-evidence-dev
+    container_name: chr-evidence-dev
     restart: unless-stopped
     networks:
       - dwh-net
@@ -23,9 +23,9 @@ services:
     command: ["dev"]
     # command: ["init"]  # инициализация проекта при первом запуске
 
-  dwh-evidence-prod:
+  chr-evidence-prod:
     build: .
-    container_name: dwh-evidence-prod
+    container_name: chr-evidence-prod
     restart: unless-stopped
     networks:
       - dwh-net
