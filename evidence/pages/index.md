@@ -1,75 +1,104 @@
 ---
-title: Эскалация в Персидском заливе
 ---
 
 <script>
   onMount(() => {
-    function updateDotColors() {
-      const vh = window.innerHeight;
-      document.querySelectorAll('.timeline-dot').forEach(dot => {
-        const rect = dot.getBoundingClientRect();
-        const ratio = Math.max(0, Math.min(1, (rect.top + rect.height / 2) / vh));
-        // ratio=0 (top) → red #b44a38, ratio=1 (bottom) → beige #c4bca9
-        const r = Math.round(180 + (196 - 180) * ratio);
-        const g = Math.round(74  + (188 - 74)  * ratio);
-        const b = Math.round(56  + (169 - 56)  * ratio);
-        dot.style.backgroundColor = `rgb(${r},${g},${b})`;
-      });
-    }
+    const WORDS = [
+      "life", "war", "art", "tech", "ai",
+      "now", "love", "money", "power", "truth",
+      "time", "code", "news", "mind", "world"
+    ];
+    const TYPE_MS   = 95;
+    const DELETE_MS = 55;
+    const HOLD_MS   = 1500;
+    const BLANK_MS  = 320;
 
-    updateDotColors();
-    window.addEventListener('scroll', updateDotColors, { passive: true });
-    return () => window.removeEventListener('scroll', updateDotColors);
+    document.querySelectorAll('[data-chronica-suffix]').forEach((el) => {
+      let idx = 0, text = el.textContent || WORDS[0], phase = "hold";
+      const tick = () => {
+        const word = WORDS[idx];
+        if (phase === "typing") {
+          if (text.length < word.length) {
+            text = word.slice(0, text.length + 1);
+            el.textContent = text;
+            setTimeout(tick, TYPE_MS);
+          } else { phase = "hold"; setTimeout(tick, HOLD_MS); }
+        } else if (phase === "hold") {
+          phase = "deleting"; setTimeout(tick, DELETE_MS);
+        } else if (phase === "deleting") {
+          if (text.length > 0) {
+            text = text.slice(0, -1);
+            el.textContent = text;
+            setTimeout(tick, DELETE_MS);
+          } else { phase = "blank"; setTimeout(tick, BLANK_MS); }
+        } else if (phase === "blank") {
+          idx = (idx + 1) % WORDS.length;
+          phase = "typing"; tick();
+        }
+      };
+      setTimeout(tick, HOLD_MS);
+    });
   });
 </script>
 
-```sql chronicle
-SELECT
-    dt
-    , strftime(dt, '%d') || ' ' ||
-      CASE EXTRACT(month FROM dt)
-        WHEN 1  THEN 'января'
-        WHEN 2  THEN 'февраля'
-        WHEN 3  THEN 'марта'
-        WHEN 4  THEN 'апреля'
-        WHEN 5  THEN 'мая'
-        WHEN 6  THEN 'июня'
-        WHEN 7  THEN 'июля'
-        WHEN 8  THEN 'августа'
-        WHEN 9  THEN 'сентября'
-        WHEN 10 THEN 'октября'
-        WHEN 11 THEN 'ноября'
-        WHEN 12 THEN 'декабря'
-      END || ' ' || strftime(dt, '%Y') AS formatted_dt
-    , headline_txt
-    , summary_txt
-FROM dwh_pg_1.s_story_daily_summaries
-WHERE language_code = 'ru'
-  AND story_id = 1
-ORDER BY dt DESC
-```
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap" rel="stylesheet">
 
-## Хроника событий
+<style>
+  .chronica-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    font-family: 'DM Serif Display', 'Times New Roman', serif;
+    font-size: 36px;
+    color: #15140F;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    user-select: none;
+  }
+  .chronica-logo .cl-disk {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: #15140F; color: #F5F1EA;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .chronica-logo .cl-disk-c {
+    font-size: 28px; line-height: 1; transform: translateY(-2px);
+  }
+  @media (min-width: 640px) {
+    .chronica-logo { font-size: 56px; gap: 18px; }
+    .chronica-logo .cl-disk { width: 62px; height: 62px; }
+    .chronica-logo .cl-disk-c { font-size: 42px; }
+  }
+  .chronica-logo .cl-word {
+    display: inline-flex; align-items: baseline;
+  }
+  .chronica-logo .cl-suffix { color: #86827A; }
+  .chronica-logo .cl-cursor {
+    display: inline-block;
+    width: 3px; height: 0.78em;
+    background: #B43A1F;
+    margin-left: 6px;
+    align-self: center;
+    animation: cl-blink 1.05s steps(2) infinite;
+  }
+  @keyframes cl-blink {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0; }
+  }
+</style>
 
-{#if chronicle.length > 0}
-<div class="not-prose mt-4 relative">
-  <div class="absolute left-0 top-0 bottom-0 w-px bg-[#c4bca9]"></div>
-  {#each chronicle as entry, i}
-    <div class="relative pl-4 mb-4">
-      <div class="timeline-dot absolute left-0 top-5 w-2 h-2 rounded-full -translate-x-1/2 ring-2 ring-white" style="background-color:#c4bca9"></div>
-      <div class="bg-white rounded-r-xl shadow-sm pl-5 pr-5 py-4">
-        <p class="text-xs uppercase tracking-wide text-stone-400 mb-1">{entry.formatted_dt}</p>
-        <p class="text-base font-medium text-gray-900 mb-2">{entry.headline_txt}</p>
-        <input type="checkbox" id="exp-{i}" class="hidden peer">
-        <p class="text-gray-600 leading-relaxed text-sm line-clamp-5 peer-checked:line-clamp-none">{entry.summary_txt}</p>
-        <label for="exp-{i}" class="peer-checked:hidden text-xs text-[#c4bca9] mt-2 block cursor-pointer hover:text-stone-500">читать далее →</label>
-        <label for="exp-{i}" class="hidden peer-checked:block text-xs text-[#c4bca9] mt-2 cursor-pointer hover:text-stone-500">скрыть ↑</label>
-      </div>
-    </div>
-  {/each}
+<div class="not-prose flex flex-col items-center mt-16 mb-12">
+
+  <span class="chronica-logo" aria-label="chronica.life">
+    <span class="cl-disk"><span class="cl-disk-c">c</span></span>
+    <span class="cl-word">
+      chronica<span class="cl-suffix">.<span data-chronica-suffix="">love</span></span>
+      <span class="cl-cursor" aria-hidden="true"></span>
+    </span>
+  </span>
+
+  <p class="text-gray-400 text-xs leading-relaxed mt-16 max-w-lg text-center">
+    Собираем материалы из открытых источников, группируем по темам и формируем ежедневные сводки — чтобы следить за событиями без лишнего шума.
+  </p>
+
 </div>
-{:else}
-<div class="not-prose mt-4 p-6 bg-amber-50 border border-amber-200 rounded-xl">
-  <p class="text-amber-800 text-sm">Ежедневные сводки новостей для этого сюжета пока не сформированы.</p>
-</div>
-{/if}
