@@ -13,31 +13,39 @@
     const HOLD_MS   = 1500;
     const BLANK_MS  = 320;
 
+    const cleanups = [];
+
     document.querySelectorAll('[data-chronica-suffix]').forEach((el) => {
-      let idx = 0, text = el.textContent || WORDS[0], phase = "hold";
+      let idx = 0, text = el.textContent, phase = "hold";
+      let timerId;
+
       const tick = () => {
         const word = WORDS[idx];
         if (phase === "typing") {
           if (text.length < word.length) {
             text = word.slice(0, text.length + 1);
             el.textContent = text;
-            setTimeout(tick, TYPE_MS);
-          } else { phase = "hold"; setTimeout(tick, HOLD_MS); }
+            timerId = setTimeout(tick, TYPE_MS);
+          } else { phase = "hold"; timerId = setTimeout(tick, HOLD_MS); }
         } else if (phase === "hold") {
-          phase = "deleting"; setTimeout(tick, DELETE_MS);
+          phase = "deleting"; timerId = setTimeout(tick, DELETE_MS);
         } else if (phase === "deleting") {
           if (text.length > 0) {
             text = text.slice(0, -1);
             el.textContent = text;
-            setTimeout(tick, DELETE_MS);
-          } else { phase = "blank"; setTimeout(tick, BLANK_MS); }
+            timerId = setTimeout(tick, DELETE_MS);
+          } else { phase = "blank"; timerId = setTimeout(tick, BLANK_MS); }
         } else if (phase === "blank") {
           idx = (idx + 1) % WORDS.length;
           phase = "typing"; tick();
         }
       };
-      setTimeout(tick, HOLD_MS);
+
+      timerId = setTimeout(tick, HOLD_MS);
+      cleanups.push(() => clearTimeout(timerId));
     });
+
+    return () => cleanups.forEach(fn => fn());
   });
 </script>
 
@@ -72,7 +80,12 @@
   .chronica-logo .cl-word {
     display: inline-flex; align-items: baseline;
   }
-  .chronica-logo .cl-suffix { color: #86827A; }
+  .chronica-logo .cl-suffix {
+    display: inline-flex;
+    align-items: baseline;
+    min-width: 3.8em;
+    color: #86827A;
+  }
   .chronica-logo .cl-cursor {
     display: inline-block;
     width: 3px; height: 0.78em;
@@ -92,8 +105,7 @@
   <span class="chronica-logo" aria-label="chronica.life">
     <span class="cl-disk"><span class="cl-disk-c">c</span></span>
     <span class="cl-word">
-      chronica<span class="cl-suffix">.<span data-chronica-suffix="">love</span></span>
-      <span class="cl-cursor" aria-hidden="true"></span>
+      chronica<span class="cl-suffix">.<span data-chronica-suffix="">life</span><span class="cl-cursor" aria-hidden="true"></span></span>
     </span>
   </span>
 
