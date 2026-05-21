@@ -1,24 +1,27 @@
 # Chronica
 
-**Chronica** — система автоматизированного мониторинга и анализа новостей. Собирает материалы из RSS-источников, группирует их по темам и формирует ежедневные сводки с помощью LLM, чтобы следить за событиями без лишнего шума.
+**Chronica** — система автоматизированного мониторинга и анализа новостей и рыночных данных. Собирает материалы из RSS-источников и биржевые сделки с MOEX, группирует по темам и формирует ежедневные сводки с помощью LLM, чтобы следить за событиями без лишнего шума.
 
 ## Архитектура
 
 ```
-RSS-источники → rss-fetcher → Redpanda ──→ Redpanda Connect → PostgreSQL → Evidence.dev
-                                  ↑                                ↑
-                               Redis (кэш)                    Ollama (LLM)
+RSS-источники → rss-fetcher ──┐
+                               ├──→ Redpanda ──→ Redpanda Connect → PostgreSQL → Evidence.dev
+MOEX → moex-fetcher ──────────┘                                          ↑
+                                  ↑                                   Ollama (LLM)
+                               Redis (кэш)         ClickHouse ←── moex-fetcher
 ```
 
 ### Сервисы (`/services`)
 
 | Сервис | Описание |
 |--------|----------|
-| `rss-fetcher` | Периодический опрос RSS-лент, парсинг и сохранение новостей в stg-слой |
+| `rss-fetcher` | Периодический опрос RSS-лент, парсинг и публикация новостей в Redpanda |
+| `moex-fetcher` | Стриминг биржевых сделок с MOEX ISS API, запись в ClickHouse (`ods.moex_trades`) |
 
 ### Хранилище данных (`/dwh`)
 
-Многослойная архитектура PostgreSQL:
+**PostgreSQL** — основное хранилище новостей и сводок:
 
 | Слой | Описание |
 |------|----------|
@@ -30,7 +33,8 @@ RSS-источники → rss-fetcher → Redpanda ──→ Redpanda Connect �
 
 | Компонент | Описание |
 |-----------|----------|
-| **PostgreSQL** | Основное хранилище |
+| **PostgreSQL** | Основное хранилище новостей (схемы `ods`, `dds`, `dm`) |
+| **ClickHouse** | Аналитическое хранилище биржевых данных · HTTP `http://localhost:38123` |
 | **Redpanda** | Kafka-совместимый брокер сообщений |
 | **Redpanda Connect** | Потоковый ETL: читает топики, пишет в PostgreSQL (конфигурации в `dwh/rpc/`) |
 | **Redpanda Console** | Web UI для управления топиками · `http://localhost:38088` |
@@ -52,7 +56,7 @@ Pydantic-модели, конфигурации и утилиты, раздел�
 ## Технологический стек
 
 - **Python** 3.14+ · [uv](https://github.com/astral-sh/uv)
-- **БД**: PostgreSQL, Redis (LRU-кэш)
+- **БД**: PostgreSQL, ClickHouse, Redis (LRU-кэш)
 - **Брокер**: Redpanda + Redpanda Connect
 - **LLM**: Ollama
 - **Дашборд**: Evidence.dev (SvelteKit)
@@ -87,5 +91,7 @@ cd evidence/compose && docker compose up chr-evidence-prod
 ## Конфигурация
 
 - RSS-источники: `services/rss-fetcher/config/rss_feeds.yaml`
-- Переменные окружения: `.env` в корне проекта
-- Миграции БД: `dwh/migrations/pg/`
+- MOEX (тикеры, расписание): `services/moex_fetcher/config/config.yaml`
+- Переменные окружения: `common/.env.server`
+- Миграции PostgreSQL: `dwh/migrations/pg/`
+- Миграции ClickHouse: `dwh/migrations/ch/`
