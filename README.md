@@ -5,9 +5,9 @@
 ## Архитектура
 
 ```
-RSS-источники → rss-fetcher → Redpanda → DWH (PostgreSQL) → Evidence.dev
-                                                ↑
-                                             Ollama (LLM)
+RSS-источники → rss-fetcher → Redpanda ──→ Redpanda Connect → PostgreSQL → Evidence.dev
+                                  ↑                                ↑
+                               Redis (кэш)                    Ollama (LLM)
 ```
 
 ### Сервисы (`/services`)
@@ -26,7 +26,17 @@ RSS-источники → rss-fetcher → Redpanda → DWH (PostgreSQL) → Evi
 | `dds` | Хабы, сателлиты, справочники, сводки по сюжетам |
 | `dm` | Витрины данных для дашборда (views) |
 
-Инфраструктура DWH: **PostgreSQL**, **Redpanda** (Kafka-совместимый брокер), **Redis**, **Ollama** (локальный LLM).
+Инфраструктура DWH:
+
+| Компонент | Описание |
+|-----------|----------|
+| **PostgreSQL** | Основное хранилище |
+| **Redpanda** | Kafka-совместимый брокер сообщений |
+| **Redpanda Connect** | Потоковый ETL: читает топики, пишет в PostgreSQL (конфигурации в `dwh/rpc/`) |
+| **Redpanda Console** | Web UI для управления топиками · `http://localhost:38088` |
+| **Redis** | LRU-кэш без персистентности (512 МБ, `allkeys-lru`) |
+| **RedisInsight** | Web UI для Redis · `http://localhost:35540` |
+| **Ollama** | Локальный запуск LLM для генерации сводок |
 
 ### Дашборд (`/evidence`)
 
@@ -42,8 +52,8 @@ Pydantic-модели, конфигурации и утилиты, раздел�
 ## Технологический стек
 
 - **Python** 3.14+ · [uv](https://github.com/astral-sh/uv)
-- **БД**: PostgreSQL, Redis
-- **Брокер**: Redpanda
+- **БД**: PostgreSQL, Redis (LRU-кэш)
+- **Брокер**: Redpanda + Redpanda Connect
 - **LLM**: Ollama
 - **Дашборд**: Evidence.dev (SvelteKit)
 - **Инфраструктура**: Docker Compose
