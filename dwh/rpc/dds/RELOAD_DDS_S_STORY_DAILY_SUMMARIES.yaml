@@ -12,33 +12,33 @@ pipeline:
         query: |
           WITH
               news AS (
-                SELECT
-                    story_id,
-                    story_nm,
-                    (published_dttm AT TIME ZONE 'UTC')::date AS dt,
-                    s.language_code,
-                    jsonb_strip_nulls(jsonb_build_object(
-                        'story_nm', story_nm,
-                        'news_txt', news_txt,
-                        'reach_idx', reach_idx,
-                        'impact_scr', impact_scr,
-                        'duration_days', duration_days,
-                        'geoscale_nm', geoscale_nm,
-                        'confidence_prt', confidence_prt,
-                        'reason_txt', reason_txt)) AS description
-                FROM dm.uniq_news_stories s
-                LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id AND r.language_code = s.language_code
-                WHERE s.language_code = 'ru'
+                  SELECT
+                      story_id,
+                      story_nm,
+                      (published_dttm AT TIME ZONE 'UTC')::date AS dt,
+                      s.language_code,
+                      jsonb_strip_nulls(jsonb_build_object(
+                          'story_nm', story_nm,
+                          'news_txt', news_txt,
+                          'reach_idx', reach_idx,
+                          'impact_scr', impact_scr,
+                          'duration_days', duration_days,
+                          'geoscale_nm', geoscale_nm,
+                          'confidence_prt', confidence_prt,
+                          'reason_txt', reason_txt)) AS description
+                  FROM dm.uniq_news_stories s
+                  LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id AND r.language_code = s.language_code
+                  WHERE s.language_code = 'ru'
               ),
               aggregated AS (
-                SELECT
-                  story_id
-                  , min(story_nm) AS story_nm
-                  , dt
-                  , language_code
-                  , jsonb_agg(description) AS descriptions
-                FROM news
-                GROUP BY story_id, dt, language_code
+                  SELECT
+                      story_id
+                      , min(story_nm) AS story_nm
+                      , dt
+                      , language_code
+                      , jsonb_agg(description) AS descriptions
+                  FROM news
+                  GROUP BY story_id, dt, language_code
               )
           SELECT *
           FROM aggregated a
