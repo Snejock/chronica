@@ -62,6 +62,7 @@ services:
       - PG_DATABASE=${POSTGRES__DATABASE}
       - PG_HOST=${POSTGRES__HOST}
       - PG_PORT=${POSTGRES__PORT}
+      - DEEPSEEK_API_KEY=${DEEPSEEK__API_KEY}
     command: [
       "streams",
       "-w",
