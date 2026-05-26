@@ -33,6 +33,8 @@ services:
       - "33000:3000"
     env_file:
       - ../../.env
+    environment:
+      - EVIDENCE_REBUILD_INTERVAL=1200
     volumes:
       - ../static:/evidence/static
       - ../pages:/evidence/pages

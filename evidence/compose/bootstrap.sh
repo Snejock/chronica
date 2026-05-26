@@ -24,8 +24,18 @@ case $1 in
         COMMAND="npm install && $RUN_DEV_COMMAND"
         ;;
     prod)
-        echo "Starting in production mode (build + preview)."
-        COMMAND="npm install && $RUN_PROD_COMMAND"
+        echo "Starting in production mode (build + periodic rebuild + preview)."
+        REBUILD_INTERVAL=${EVIDENCE_REBUILD_INTERVAL:-1200}
+        npm install
+        npm run sources && npm run build
+        (
+          while true; do
+            sleep "$REBUILD_INTERVAL"
+            echo "[refresh] npm run sources && npm run build"
+            npm run sources && npm run build || echo "[refresh] failed, will retry next cycle"
+          done
+        ) &
+        COMMAND="npm run preview"
         ;;
     *)
         if [ $# -gt 0 ];
