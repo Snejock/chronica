@@ -1,5 +1,6 @@
 ---
 title: Конфликт России и Украины
+full_width: true
 ---
 
 <script>

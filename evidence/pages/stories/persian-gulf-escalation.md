@@ -1,5 +1,6 @@
 ---
 title: Эскалация в Персидском заливе
+full_width: true
 ---
 
 <script>
