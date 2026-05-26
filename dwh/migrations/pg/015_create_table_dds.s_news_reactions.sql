@@ -17,9 +17,8 @@ CREATE TABLE IF NOT EXISTS dds.s_news_reactions (
     duration_days   integer,
     geoscale_nm     dds.geoscale_nm_enum,
     confidence_prt  numeric(3, 2),
-    language_code   text NOT NULL,
     reason_txt      text,
 
     CONSTRAINT s_news_reactions_pkey
-        PRIMARY KEY (news_id, model_nm, language_code)
+        PRIMARY KEY (news_id, model_nm)
 );

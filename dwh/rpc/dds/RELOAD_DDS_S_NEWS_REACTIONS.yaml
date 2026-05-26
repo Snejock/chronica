@@ -122,9 +122,9 @@ output:
     dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
     query: |
       INSERT INTO dds.s_news_reactions (
-        news_id, model_nm, reach_idx, impact_scr, duration_days, geoscale_nm, confidence_prt, language_code, reason_txt
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      ON CONFLICT (news_id, model_nm, language_code) DO NOTHING
+        news_id, model_nm, reach_idx, impact_scr, duration_days, geoscale_nm, confidence_prt, reason_txt
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (news_id, model_nm) DO NOTHING
     args_mapping: |
       root = [
         this.news_id.string(),
@@ -134,7 +134,6 @@ output:
         this.reaction.duration_days.number(),
         this.reaction.geoscale_nm.string(),
         this.reaction.confidence_prt.number(),
-        "ru",
         this.reaction.reason_txt.string().catch("")
       ]
     batching:

@@ -27,7 +27,7 @@ pipeline:
                           'confidence_prt', confidence_prt,
                           'reason_txt', reason_txt)) AS description
                   FROM dm.uniq_news_stories s
-                  LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id AND r.language_code = s.language_code
+                  LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id
                   WHERE s.language_code = 'ru'
               ),
               aggregated AS (

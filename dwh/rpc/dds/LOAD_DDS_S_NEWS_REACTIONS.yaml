@@ -155,9 +155,9 @@ output:
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
             INSERT INTO dds.s_news_reactions (
-              news_id, model_nm, reach_idx, impact_scr, duration_days, geoscale_nm, confidence_prt, language_code, reason_txt
-            ) VALUES (xxh64($1), $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (news_id, model_nm, language_code) DO UPDATE SET
+              news_id, model_nm, reach_idx, impact_scr, duration_days, geoscale_nm, confidence_prt, reason_txt
+            ) VALUES (xxh64($1), $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (news_id, model_nm) DO UPDATE SET
               _loaded_dttm = now(),
               reach_idx = EXCLUDED.reach_idx,
               impact_scr = EXCLUDED.impact_scr,
@@ -174,7 +174,6 @@ output:
               this.duration_days,
               this.geoscale_nm,
               this.confidence_prt,
-              this.language_code,
               this.reason_txt
             ]
           batching:
@@ -195,7 +194,6 @@ output:
                 "duration_days": this.reaction.duration_days.number(),
                 "geoscale_nm": this.reaction.geoscale_nm.string(),
                 "confidence_prt": this.reaction.confidence_prt.number(),
-                "language_code": "ru",
                 "reason_txt": this.reaction.reason_txt.string().catch("")
               }
 
