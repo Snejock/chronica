@@ -13,7 +13,7 @@ pipeline:
     - catch:
         - log:
             level: ERROR
-            message: "Error decoding avro: ${! error() }"
+            message: "❌ AVRO DECODE FAILED: ${! error() }"
         - mapping: 'root = deleted()'
 
     # выполнение проверки, была ли новость обработана ранее
@@ -40,6 +40,9 @@ pipeline:
                   operator: get
                   key: "lookup:dds.d_rss_feeds:${! this.feed_id }"
         result_map: 'root.language_code = content().string().catch("")'
+
+    # сброс флага ошибки от штатного cache-miss (get по отсутствующему ключу), чтобы он не доезжал до avro-catch на выходе out_redpanda
+    - catch: []
 
     # получение из базы (при отсутствии в кэше) значения language_code для this.feed_id
     - branch:
