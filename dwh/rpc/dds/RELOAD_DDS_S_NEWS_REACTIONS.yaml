@@ -128,7 +128,7 @@ output:
     args_mapping: |
       root = [
         this.news_id.string(),
-        "deepseek-v4-flash",
+        "deepseek-v4-flash:cloud",
         this.reaction.reach_idx.string(),
         this.reaction.impact_scr.number(),
         this.reaction.duration_days.number(),
