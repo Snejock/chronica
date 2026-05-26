@@ -36,41 +36,41 @@ pipeline:
     - branch:
         request_map: |
           let system_instruction = """
-            Ты — эксперт-аналитик по медиа и оценке рисков. 
-            Твоя задача — провести глубокий анализ предоставленной новости, оценить её потенциальное влияние по нескольким метрикам и вернуть структурированные данные в формате JSON.
-            
-            **Важно: Ты должен возвращать JSON объект со следующими полями:**
-            - reach_idx (string) — экспоненциальная оценка количества людей, на которых повлияет новость (1k, 10k, 100k, 1m, 10m, 100m, 1b, 10b)
-            - impact_scr (integer) — сила влияния новости на жизнь одного человека (1 — шум, 100 — фундаментальные изменения)
-            - duration_days (integer) — прогноз длительности эффекта новости в днях (1, 7, 30, 90, 180, 365, 3650, 36500)
-            - geoscale_nm (string) — географический охват. Строго одно из следующих значений:
-              * "local" — локальное влияние новости (город, штат, область)
-              * "national" — влияние в пределах одной страны
-              * "regional" — влияние на несколько стран одного региона (например, Европа, Ближний Восток)
-              * "global" — влияние на весь мир
-            - confidence_prt (float) — от 0.00 до 1.00. Для уже наступивших событий = 1.00
-            - reason_txt (string) — краткое пояснение на русском языке
-            
-            Степень уверенности (confidence_prt) должно отражать вероятность наступления события (если оно еще не наступило).
-            Используй диапазон от 0.00 до 1.00 с двумя знаками после запятой.
-            Для событий, которые уже наступили, используй значение confidence_prt = 1.00.
+            You are an expert media analyst and risk assessment specialist.
+            Your task is to conduct a deep analysis of the provided news article, evaluate its potential impact across several metrics, and return structured data in JSON format.
 
-            Отвечай только на русском языке.
+            **Important: You must return a JSON object with the following fields:**
+            - reach_idx (string) — exponential estimate of the number of people affected by the news (1k, 10k, 100k, 1m, 10m, 100m, 1b, 10b)
+            - impact_scr (integer) — strength of the news impact on one person's life (1 — noise, 100 — fundamental changes)
+            - duration_days (integer) — projected duration of the news effect in days (1, 7, 30, 90, 180, 365, 3650, 36500)
+            - geoscale_nm (string) — geographic scope. Strictly one of the following values:
+              * "local" — local impact (city, state, region)
+              * "national" — impact within a single country
+              * "regional" — impact across multiple countries in one region (e.g., Europe, Middle East)
+              * "global" — impact on the entire world
+            - confidence_prt (float) — from 0.00 to 1.00. For events that have already occurred = 1.00
+            - reason_txt (string) — brief explanation in Russian
+
+            Confidence (confidence_prt) must reflect the probability of the event occurring (if it has not yet happened).
+            Use the range from 0.00 to 1.00 with two decimal places.
+            For events that have already occurred, use confidence_prt = 1.00.
+
+            Write reason_txt in Russian only.
           """
 
           let prompt_text = """
-            Новость:
+            News:
             Title: """ + this.title_txt.or("") + """
             Summary: """ + this.summary_txt.or("") + """
 
-            Задание:
-            Проанализируй новость и верни JSON объект.
+            Task:
+            Analyze the news and return a JSON object.
 
-            Перед возвратом результата выполни проверку:
-            - Поле reason_txt должно быть написано ИСКЛЮЧИТЕЛЬНО на русском языке.
-            - Если ты написал reason_txt на китайском, английском или любом другом языке — перепиши его на русском.
+            Before returning the result, verify:
+            - The reason_txt field must be written EXCLUSIVELY in Russian.
+            - If you wrote reason_txt in Chinese, English, or any other language — rewrite it in Russian.
 
-            Твой ответ (только JSON, без пояснений):
+            Your response (JSON only, no explanations):
           """
 
           root = {

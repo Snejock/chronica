@@ -36,8 +36,6 @@ pipeline:
     # обращение к LLM для извлечения тикеров и оценок
     - branch:
         request_map: |
-          let ai_model_name = "deepseek-v4-flash:cloud"
-          
           let watchlist = """
             SBER: Sberbank Rossii PJSC, Сбербанк, Sberbank (Banking)
             ROSN: Rosneft PJSC, Роснефть, Rosneft (Energy)
@@ -72,87 +70,87 @@ pipeline:
           """
 
           let system_instruction = """
-            Ты — старший финансовый аналитик (Senior Quant Researcher).
-            Твоя задача — извлекать сигналы из новостей для алгоритмической торговли.
-            
-            **Важно: Ты должен возвращать JSON массив объектов с полями:**
-            - ticker_code (string) — тикер из предоставленного Watchlist. Если новость косвенно влияет на несколько компаний (например, через цены на нефть, геополитику, макроэкономику), ты обязан перечислить **все релевантные тикеры** из списка. Не ограничивайся прямыми упоминаниями.
-            - category_nm (string) — одно из значений: earnings, dividends, m_and_a, capital, legal, management, contracts, products, operations, ratings, macro, other.
-            - impact_scr (integer) — от -100 до +100 (см. шкалу ниже).
-            - confidence_prt (float) — от 0.00 до 1.00. Для уже наступивших событий = 1.00.
-            - reason_txt (string) — краткое пояснение на русском языке.
-            Давай оценку и краткое пояснение по каждому тикеру независимо друг от друга, не нужно их связывать тикеры между собой какими-либо словами.
-            
-            **Правила для ticker_code:**
-            - Если новость **прямо упоминает** компанию из Watchlist — включай её тикер.
-            - Если новость **косвенно влияет** на сектор или весь рынок (например, цены на нефть, санкции, курс рубля, геополитика) — включай **все тикеры** из Watchlist, которые подпадают под это влияние.
-            - Если влияние распространяется на все компании списка (макро-шок, паника на рынке) — перечисли **все тикеры**.
-            - Если новость **вообще не связана** ни с одной из компаний списка и не влияет на их бизнес — верни **пустой массив** `"tickers": []`.
-            
-            **Правила для reason_txt:** 
-            - Давай обоснование в поле reason_txt независимо между разными тикерами, нельзя писать "аналогично", "также" и тд.
-            - Давай понятное раскрытое обоснование.
-            
-            Примеры:
-            - Новость о росте цен на нефть → `ticker_code` = ["ROSN","LKOH","GAZP","SIBN","TATN"]
-            - Новость об аэропорте Домодедово (нет компаний из списка) → `"tickers": []`
-            - Новость о судебном иске к Газпрому → `ticker_code` = ["GAZP"]
-            
-            Шкала оценки (impact_scr -100..+100):
-            Используй диапазон от -100 до +100.
-  
-            Позитив (+)
-            +1..+10: Шум, слухи, участие в форумах.
-            +10..+30: Позитивные операционные новости, мелкие контракты.
-            +30..+70: Отчеты выше ожиданий, дивиденды, крупные контракты, победы в суде.
-            +70..+100: M&A, рекордная прибыль, байбэк, стратегические прорывы.
-  
-            Негатив (-)
-            -1..-10: Негативные слухи, критика.
-            -10..-30: Мелкие штрафы, понижение рейтингов.
-            -30..-70: Отчеты ниже ожиданий, отмена дивидендов, санкции, крупные иски.
-            -70..-100: Дефолт, уголовные дела, катастрофы, потеря рынка.
-  
-            Степень уверенности (confidence_prt) должно отражать вероятность наступления события (если оно еще не наступило).
-            Используй диапазон от 0.00 до 1.00 с двумя знаками после запятой. 
-            Для событий, которые уже наступили, используй значение confidence_prt = 1.00.
-  
-            Типы событий (строго lowercase):
-            - earnings: Финансовые отчеты (МСФО/РСБУ), операционные результаты, прогнозы (guidance) по выручке/прибыли, dates отчетов.
-            - dividends: Рекомендации СД, утверждение выплат, даты отсечек (record date), отмена дивидендов.
-            - m_and_a: Слияния, поглощения, покупка/продажа долей, создание совместных предприятий (JV), реструктуризация.
-            - capital: Обратный выкуп (buyback), допэмиссия акций (SPO/FPO), сплит, выпуск облигаций, работа с долгом.
-            - legal: Суды, иски, санкции, блокировки активов, штрафы регуляторов (ЦБ, ФАС), антимонопольные дела.
-            - management: Назначение/уход топ-менеджмента (CEO, C-level), сделки инсайдеров, конфликты акционеров.
-            - contracts: Выигрыш/потеря крупных тендеров, заключение стратегических контрактов, госзаказы.
-            - products: Запуск новых продуктов, IT-релизы, патенты, презентации, отзыв брака.
-            - operations: Производственные показатели (добыча/продажи), логистика, аварии, пожары, открытие/закрытие точек.
-            - ratings: Изменение целевой цены инвестбанками, обновление кредитных рейтингов агентствами.
-            - macro: Курсы валют, цены на сырье, ставки ЦБ.
-            - other: Все, что не подходит выше (благотворительность, HR, награды, малозначимый шум).
-  
-            Отвечай только на русском языке.
+            You are a Senior Quant Researcher.
+            Your task is to extract trading signals from news articles for algorithmic trading.
+
+            **Important: You must return a JSON array of objects with the following fields:**
+            - ticker_code (string) — ticker from the provided Watchlist. If the news indirectly affects multiple companies (e.g., via oil prices, geopolitics, macroeconomics), you must list **all relevant tickers** from the list. Do not limit yourself to direct mentions.
+            - category_nm (string) — one of: earnings, dividends, m_and_a, capital, legal, management, contracts, products, operations, ratings, macro, other.
+            - impact_scr (integer) — from -100 to +100 (see scale below).
+            - confidence_prt (float) — from 0.00 to 1.00. For events that have already occurred = 1.00.
+            - reason_txt (string) — brief explanation in Russian.
+            Provide an assessment and brief explanation for each ticker independently; do not link tickers to one another with phrases like "similarly", "also", etc.
+
+            **Rules for ticker_code:**
+            - If the news **directly mentions** a company from the Watchlist — include its ticker.
+            - If the news **indirectly affects** a sector or the entire market (e.g., oil prices, sanctions, ruble exchange rate, geopolitics) — include **all tickers** from the Watchlist that fall under this influence.
+            - If the impact extends to all companies in the list (macro shock, market panic) — list **all tickers**.
+            - If the news is **completely unrelated** to any company in the list and does not affect their business — return an **empty array** `"tickers": []`.
+
+            **Rules for reason_txt:**
+            - Provide reasoning in the reason_txt field independently for each ticker; do not write "similarly", "also", etc.
+            - Provide a clear and detailed reasoning.
+
+            Examples:
+            - News about rising oil prices → `ticker_code` = ["ROSN","LKOH","GAZP","SIBN","TATN"]
+            - News about Domodedovo airport (no companies from the list) → `"tickers": []`
+            - News about a lawsuit against Gazprom → `ticker_code` = ["GAZP"]
+
+            Impact score scale (impact_scr -100..+100):
+            Use the range from -100 to +100.
+
+            Positive (+)
+            +1..+10: Noise, rumors, forum participation.
+            +10..+30: Positive operational news, minor contracts.
+            +30..+70: Better-than-expected results, dividends, major contracts, court victories.
+            +70..+100: M&A, record profits, buybacks, strategic breakthroughs.
+
+            Negative (-)
+            -1..-10: Negative rumors, criticism.
+            -10..-30: Minor fines, rating downgrades.
+            -30..-70: Worse-than-expected results, dividend cancellations, sanctions, major lawsuits.
+            -70..-100: Default, criminal proceedings, disasters, market loss.
+
+            Confidence (confidence_prt) must reflect the probability of the event occurring (if it has not yet happened).
+            Use the range from 0.00 to 1.00 with two decimal places.
+            For events that have already occurred, use confidence_prt = 1.00.
+
+            Event types (strictly lowercase):
+            - earnings: Financial reports (IFRS/RAS), operational results, revenue/profit guidance, report dates.
+            - dividends: Board recommendations, payment approvals, record dates, dividend cancellations.
+            - m_and_a: Mergers, acquisitions, stake purchases/sales, joint ventures (JV), restructuring.
+            - capital: Share buybacks, additional share offerings (SPO/FPO), splits, bond issuances, debt management.
+            - legal: Litigation, lawsuits, sanctions, asset freezes, regulatory fines (CBR, FAS), antitrust cases.
+            - management: Executive appointments/departures (CEO, C-level), insider transactions, shareholder conflicts.
+            - contracts: Winning/losing major tenders, signing strategic contracts, government orders.
+            - products: New product launches, IT releases, patents, presentations, product recalls.
+            - operations: Production metrics (output/sales), logistics, accidents, fires, facility openings/closures.
+            - ratings: Target price changes by investment banks, credit rating updates by agencies.
+            - macro: Exchange rates, commodity prices, central bank rates.
+            - other: Everything that does not fit above (charity, HR, awards, insignificant noise).
+
+            Respond in Russian language only for the reason_txt field.
           """
 
           let prompt_text = """
-            Watchlist (тикер: описание):
+            Watchlist (ticker: description):
             """ + $watchlist + """
-            
-            Новость:
+
+            News:
             Title: """ + this.title_txt.or("") + """
             Summary: """ + this.summary_txt.or("") + """
-            
-            Задание:
-            Проанализируй новость и верни JSON массив объектов, где каждый объект описывает влияние на один тикер.
-            Проводи анализ и представь обоснование в поле reason_txt независимо между разными тикерами. 
-            Правила:
-            1. Включай тикеры, даже если новость косвенно влияет (например, через сырьевые цены, геополитику, макроэкономику).
-            2. Если новость влияет на несколько компаний одного сектора — перечисли их все.
-            3. Если новость не связана ни с одним тикером из Watchlist — верни пустой массив.
-            4. Указывай confidence_prt = 1.00 для уже случившихся событий (например, ограничения сняты, контракт подписан).
-            5. Поле reason_txt пиши на русском языке.
-            
-            Формат ответа (строго):
+
+            Task:
+            Analyze the news and return a JSON array of objects, where each object describes the impact on one ticker.
+            Provide reasoning in the reason_txt field independently for each ticker.
+            Rules:
+            1. Include tickers even if the news has indirect influence (e.g., via commodity prices, geopolitics, macroeconomics).
+            2. If the news affects multiple companies in the same sector — list them all.
+            3. If the news is not related to any ticker from the Watchlist — return an empty array.
+            4. Set confidence_prt = 1.00 for events that have already occurred (e.g., restrictions lifted, contract signed).
+            5. Write the reason_txt field in Russian.
+
+            Response format (strict):
             {
               "tickers": [
                 {
@@ -160,74 +158,41 @@ pipeline:
                   "category_nm": "macro",
                   "impact_scr": -15,
                   "confidence_prt": 0.85,
-                  "reason_txt": "Например, укрепление рубля негативно для экспортёров"
+                  "reason_txt": "Example: ruble appreciation is negative for exporters"
                 }
               ]
             }
-            
-            Твой ответ (только JSON, без пояснений):
+
+            Your response (JSON only, no explanations):
           """
           root = {
-            "model": $ai_model_name,
+            "model": "deepseek-v4-flash",
             "stream": false,
-            "options": {
-              "temperature": 0.0,
-              "top_p": 0.1
-            },
-            "system": $system_instruction,
-            "prompt": $prompt_text,
-            "format": {
-              "type": "object",
-              "properties": {
-                "tickers": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "ticker_code": {
-                        "type": "string", 
-                        "description": "Stock ticker symbol from the Watchlist, e.g. SBER, ROSN"
-                      },
-                      "category_nm": {
-                        "type": "string", 
-                        "enum": [
-                          "earnings", "dividends", "m_and_a", "capital", "legal", 
-                          "management", "contracts", "products", "operations", 
-                          "ratings", "macro", "other"
-                        ],
-                        "description": "Exact category of the event"
-                      },
-                      "impact_scr": {
-                        "type": "integer", 
-                        "description": "Impact score from -100 to 100"
-                      },
-                      "confidence_prt": {
-                        "type": "number", 
-                        "description": "Confidence from 0.00 to 1.00"
-                      },
-                      "reason_txt": {
-                        "type": "string", 
-                        "description": "Short explanation of the impact in Russian"
-                      }
-                    },
-                    "required": ["ticker_code", "category_nm", "impact_scr", "confidence_prt", "reason_txt"]
-                  }
-                }
-              },
-              "required": ["tickers"]
-            }
+            "temperature": 0.0,
+            "top_p": 0.1,
+            "response_format": { "type": "json_object" },
+            "messages": [
+              { "role": "system", "content": $system_instruction },
+              { "role": "user",   "content": $prompt_text }
+            ]
           }
         processors:
-          - try:
-              - label: http
-                http:
-                  url: "http://dwh-ol-1:11434/api/generate"
-                  verb: POST
-                  headers:
-                    Content-Type: "application/json"
-                  timeout: 5m
+          - label: http
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 5m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
           - mapping: |
-              let result = this.response.parse_json().catch(null)
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
               root.llm_tickers = if $result != null { $result.tickers } else { [] }
         result_map: |
           root.tickers = this.llm_tickers
@@ -250,15 +215,14 @@ output:
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
             INSERT INTO dds.s_news_ticker_reactions (
-              news_id, model_nm, ticker_code, category_nm, impact_scr, confidence_prt, language_code, reason_txt
-            ) VALUES (xxh64($1), $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (news_id, ticker_code, model_nm, language_code) DO UPDATE SET
+              news_id, model_nm, ticker_code, category_nm, impact_scr, confidence_prt, reason_txt
+            ) VALUES (xxh64($1), $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (news_id, ticker_code, model_nm) DO UPDATE SET
               _loaded_dttm = now(),
               model_nm = EXCLUDED.model_nm,
               category_nm = EXCLUDED.category_nm,
               impact_scr = EXCLUDED.impact_scr,
               confidence_prt = EXCLUDED.confidence_prt,
-              language_code = EXCLUDED.language_code,
               reason_txt = EXCLUDED.reason_txt;
           args_mapping: |
             root = [
@@ -268,7 +232,6 @@ output:
               this.category_nm,
               this.impact_scr,
               this.confidence_prt,
-              this.language_code,
               this.reason_txt
             ]
           batching:
@@ -288,7 +251,6 @@ output:
                 "category_nm": t.category_nm.string().catch("other"),
                 "impact_scr": t.impact_scr.number().catch(0),
                 "confidence_prt": t.confidence_prt.number().catch(0.0),
-                "language_code": "ru",
                 "reason_txt": t.reason_txt.string().catch("")
               })
 
