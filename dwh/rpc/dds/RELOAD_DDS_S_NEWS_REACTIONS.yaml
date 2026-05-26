@@ -1,0 +1,142 @@
+input:
+  generate:
+    interval: "5m"
+    mapping: 'root = {}'
+
+pipeline:
+  threads: 1
+  processors:
+    - label: postgres
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          SELECT t.news_id, t.title_txt, t.summary_txt
+          FROM dds.s_news_texts t
+          WHERE t.language_code = 'en'
+            AND NOT EXISTS (SELECT 1
+                            FROM dds.s_news_reactions r
+                            WHERE r.news_id = t.news_id)
+          LIMIT 20
+
+    - log:
+        level: INFO
+        message: '[SQL] Fetched ${! this.length().catch(0) } unprocessed news'
+
+    - mapping: |
+        root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
+
+    - unarchive:
+        format: json_array
+
+    - log:
+        level: INFO
+        message: '[NEWS] news_id=${! this.news_id } | title="${! this.title_txt.string().catch("").slice(0, 80) }"'
+
+    - branch:
+        request_map: |
+          let system_instruction = """
+            Ты — эксперт-аналитик по медиа и оценке рисков. 
+            Твоя задача — провести глубокий анализ предоставленной новости, оценить её потенциальное влияние по нескольким метрикам и вернуть структурированные данные в формате JSON.
+            
+            **Важно: Ты должен возвращать JSON объект со следующими полями:**
+            - reach_idx (string) — экспоненциальная оценка количества людей, на которых повлияет новость (1k, 10k, 100k, 1m, 10m, 100m, 1b, 10b)
+            - impact_scr (integer) — сила влияния новости на жизнь одного человека (1 — шум, 100 — фундаментальные изменения)
+            - duration_days (integer) — прогноз длительности эффекта новости в днях (1, 7, 30, 90, 180, 365, 3650, 36500)
+            - geoscale_nm (string) — географический охват. Строго одно из следующих значений:
+              * "local" — локальное влияние новости (город, штат, область)
+              * "national" — влияние в пределах одной страны
+              * "regional" — влияние на несколько стран одного региона (например, Европа, Ближний Восток)
+              * "global" — влияние на весь мир
+            - confidence_prt (float) — от 0.00 до 1.00. Для уже наступивших событий = 1.00
+            - reason_txt (string) — краткое пояснение на русском языке
+            
+            Степень уверенности (confidence_prt) должно отражать вероятность наступления события (если оно еще не наступило).
+            Используй диапазон от 0.00 до 1.00 с двумя знаками после запятой.
+            Для событий, которые уже наступили, используй значение confidence_prt = 1.00.
+
+            Отвечай только на русском языке.
+          """
+
+          let prompt_text = """
+            Новость:
+            Title: """ + this.title_txt.or("") + """
+            Summary: """ + this.summary_txt.or("") + """
+
+            Задание:
+            Проанализируй новость и верни JSON объект.
+
+            Перед возвратом результата выполни проверку:
+            - Поле reason_txt должно быть написано ИСКЛЮЧИТЕЛЬНО на русском языке.
+            - Если ты написал reason_txt на китайском, английском или любом другом языке — перепиши его на русском.
+
+            Твой ответ (только JSON, без пояснений):
+          """
+
+          root = {
+            "model": "deepseek-v4-flash",
+            "stream": false,
+            "temperature": 0.6,
+            "top_p": 0.9,
+            "thinking": { "type": "enabled", "budget_tokens": 4000 },
+            "response_format": { "type": "json_object" },
+            "messages": [
+              { "role": "system", "content": $system_instruction },
+              { "role": "user",   "content": $prompt_text }
+            ]
+          }
+        processors:
+          - label: http
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
+          - mapping: |
+              root.reaction = this.choices.index(0).message.content.parse_json().catch(null)
+        result_map: |
+          root.reaction = this.reaction
+
+    - switch:
+        - check: 'this.reaction != null'
+          processors:
+            - log:
+                level: INFO
+                message: '[🧠 LLM ANALYZED] news_id=${! this.news_id } | title="${! this.title_txt.string().catch("").slice(0, 80) }" | reaction=${! this.reaction.string() }'
+
+    - mapping: |
+        root = if this.reaction == null { deleted() } else { this }
+
+output:
+  label: reload_dds_s_news_reactions
+  sql_raw:
+    driver: postgres
+    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    query: |
+      INSERT INTO dds.s_news_reactions (
+        news_id, model_nm, reach_idx, impact_scr, duration_days, geoscale_nm, confidence_prt, language_code, reason_txt
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (news_id, model_nm, language_code) DO NOTHING
+    args_mapping: |
+      root = [
+        this.news_id.string(),
+        "deepseek-v4-flash",
+        this.reaction.reach_idx.string(),
+        this.reaction.impact_scr.number(),
+        this.reaction.duration_days.number(),
+        this.reaction.geoscale_nm.string(),
+        this.reaction.confidence_prt.number(),
+        "ru",
+        this.reaction.reason_txt.string().catch("")
+      ]
+    batching:
+      count: 10
+      period: 1s

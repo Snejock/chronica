@@ -1,0 +1,205 @@
+input:
+  generate:
+    interval: "5m"
+    mapping: 'root = {}'
+
+pipeline:
+  threads: 1
+  processors:
+    - label: postgres
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          SELECT
+              n.news_id
+              , n.published_dttm
+              , n.story_id
+              , n.story_nm
+              , n.language_code
+              , n.news_txt
+              , jsonb_agg(jsonb_build_object(
+                  'forecast_id', f.forecast_id,
+                  'forecast_nm', f.forecast_nm,
+                  'forecast_txt', f.forecast_txt
+              ) ORDER BY f.forecast_id) AS forecasts
+          FROM (SELECT
+                    news_id, published_dttm, story_id, story_nm, language_code, news_txt
+                FROM dm.uniq_news_stories n
+                WHERE language_code = 'en'
+                  AND EXISTS (
+                      SELECT 1 FROM dds.d_forecasts f
+                      WHERE f.story_id = n.story_id
+                        AND f.is_active = true
+                        AND f.language_code = n.language_code
+                        AND NOT EXISTS (
+                            SELECT 1 FROM dds.tl_news_forecasts t
+                            WHERE t.news_id = n.news_id AND t.forecast_id = f.forecast_id))
+                ORDER BY published_dttm
+                LIMIT 20) n
+          JOIN dds.d_forecasts f ON f.story_id = n.story_id
+                                AND f.is_active = true
+                                AND f.language_code = n.language_code
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM dds.tl_news_forecasts t
+                                    WHERE t.news_id = n.news_id AND t.forecast_id = f.forecast_id)
+          GROUP BY n.news_id, n.published_dttm, n.story_id, n.story_nm, n.language_code, n.news_txt
+
+    - log:
+        level: DEBUG
+        message: '[SQL] Fetched ${! this.length().catch(0) } unprocessed news'
+
+    - mapping: |
+        root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
+
+    - unarchive:
+        format: json_array
+
+    - mapping: |
+        root = this
+        root.forecasts = this.forecasts.parse_json().catch([])
+
+    - log:
+        level: DEBUG
+        message: '[NEWS] news_id=${! this.news_id } | story="${! this.story_nm }" | forecasts=${! this.forecasts.length() } | text="${! this.news_txt.string().catch("").slice(0, 120) }"'
+
+    - mapping: |
+        root = if this.forecasts.type() == "array" && this.forecasts.length() > 0 { this } else { deleted() }
+
+    - branch:
+        request_map: |
+          let system_instruction = """
+            You are a forecast analyst. You are given a news article and a list of forecasts for a single story.
+            For each forecast, estimate two conditional probabilities used in Bayesian updating.
+
+            Bayesian update formula:
+              P(forecast comes true | news) = p_confirm_prt × P_prior / (p_confirm_prt × P_prior + p_refute_prt × (1 - P_prior))
+
+            What to estimate:
+            - p_confirm_prt — P(observing this news | forecast COMES true). How likely is this news in a world where the forecast is realized.
+            - p_refute_prt  — P(observing this news | forecast DOES NOT come true). How likely is this news in a world where the forecast is not realized.
+
+            Rules:
+            - Both probabilities must be strictly in the range [0.01..0.99]. Zero and one are not allowed: a single news article cannot be absolute proof or absolute disproof of a forecast.
+            - If the news is irrelevant to the forecast — set p_confirm_prt ≈ p_refute_prt ≈ 0.5 (neutral news does not shift the probability).
+            - If the news clearly supports the forecast — p_confirm_prt >> p_refute_prt (e.g. 0.85 and 0.15).
+            - If the news clearly contradicts the forecast — p_refute_prt >> p_confirm_prt (e.g. 0.15 and 0.85).
+            - In reason_txt briefly explain your assessment (1-2 sentences in Russian).
+
+            Return strict JSON only: {"assessments": [{"forecast_id": ..., "p_confirm_prt": ..., "p_refute_prt": ..., "reason_txt": "..."}, ...]}
+          """
+
+          let prompt_text = """
+            Story: """ + this.story_nm.string() + """
+
+            News article:
+            """ + this.news_txt.string() + """
+
+            Forecasts to assess:
+            """ + this.forecasts.string() + """
+
+            Your answer (JSON only):
+          """
+
+          root = {
+            "model": "deepseek-v4-flash",
+            "stream": false,
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "response_format": { "type": "json_object" },
+            "messages": [
+              { "role": "system", "content": $system_instruction },
+              { "role": "user",   "content": $prompt_text }
+            ]
+          }
+        processors:
+          - label: http
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
+          - mapping: |
+              let raw = this.choices.index(0).message.content.parse_json().catch(null)
+              let result = if $raw == null {
+                null
+              } else if $raw.type() == "array" {
+                {"assessments": $raw}
+              } else {
+                $raw
+              }
+              root.ai_response = $result
+        result_map: |
+          root.ai_response = this.ai_response
+
+    - switch:
+        - check: 'this.ai_response != null && this.ai_response.assessments.type() == "array"'
+          processors:
+            - log:
+                level: DEBUG
+                message: '[🧠 LLM ANALYZED] news_id=${! this.news_id } | story="${! this.story_nm }" | assessed=${! this.ai_response.assessments.length() } | assessments=${! this.ai_response.assessments.string() }'
+
+    - mapping: |
+        root = if this.ai_response == null || this.ai_response.assessments.type() != "array" { deleted() } else { this }
+
+    # Разворачивание одной новости в N сообщений (по числу прогнозов сюжета)
+    - mapping: |
+        let model = "deepseek-v4-flash"
+        let news_id = this.news_id.string()
+        let story_id = this.story_id.number()
+        let published_dttm = this.published_dttm
+        root = this.ai_response.assessments.map_each(a -> {
+          "news_id":        $news_id,
+          "story_id":       $story_id,
+          "published_dttm": $published_dttm,
+          "model_nm":       $model,
+          "forecast_id":    a.forecast_id.number(),
+          "p_confirm_prt":  a.p_confirm_prt.number().catch(0.5),
+          "p_refute_prt":   a.p_refute_prt.number().catch(0.5),
+          "reason_txt":     a.reason_txt.string().catch(null)
+        })
+
+    - log:
+        level: DEBUG
+        message: '[EXPAND] news_id=${! this.index(0).news_id.catch("?") } | rows=${! this.length().catch(0) } | forecast_ids=${! this.map_each(r -> r.forecast_id).string() }'
+
+    - unarchive:
+        format: json_array
+
+    - log:
+        level: DEBUG
+        message: '[ROW] news_id=${! this.news_id } | forecast_id=${! this.forecast_id } | p_confirm=${! this.p_confirm_prt } | p_refute=${! this.p_refute_prt } | reason="${! this.reason_txt.catch("null") }"'
+
+output:
+  label: reload_dds_tl_news_forecasts
+  sql_raw:
+    driver: postgres
+    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    query: |
+      INSERT INTO dds.tl_news_forecasts (
+        news_id, story_id, published_dttm, forecast_id, model_nm,
+        p_confirm_prt, p_refute_prt, reason_txt
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (news_id, forecast_id, model_nm) DO NOTHING
+    args_mapping: |
+      root = [
+        this.news_id,
+        this.story_id,
+        this.published_dttm,
+        this.forecast_id,
+        this.model_nm,
+        this.p_confirm_prt,
+        this.p_refute_prt,
+        this.reason_txt
+      ]
+    batching:
+      count: 10
+      period: 1s
