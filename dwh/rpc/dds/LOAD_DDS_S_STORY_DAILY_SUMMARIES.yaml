@@ -53,62 +53,48 @@ pipeline:
 
     - branch:
         request_map: |
-          let ai_model_name = "deepseek-v4-flash:cloud"
-
           let system_instruction = """
-            Ты — редактор новостного издания.
-            Твоя задача — проанализировать список новостей за один день по одной теме и вернуть два текста:
-            1. Краткий заголовок дня (headline_txt) — одно предложение, описывающее самое главное событие дня.
-            2. Связный абзац (summary_txt) — 3-5 предложений, обобщающих все ключевые события дня по данной теме.
+            You are a news publication editor.
+            Your task is to analyze a list of news for a single day on one topic and return two texts:
+            1. A brief headline of the day (headline_txt) — one sentence describing the most important event of the day.
+            2. A coherent paragraph (summary_txt) — 3-5 sentences summarizing all key events of the day on this topic.
 
-            Новости всегда присутствуют. Даже если их мало или данные о влиянии отсутствуют — опирайся на поле news_txt и составляй саммари на основе имеющихся данных.
-            При расстановке акцентов учитывай поля reach_idx (масштаб охвата), impact_scr (сила влияния, -100..+100), duration_days (длительность эффекта в днях), geoscale_nm (масштаб влияния новости), confidence_prt (степень уверенности в наступлении события 0.00 to 1.00) — если они есть.
+            News is always present. Even if there are few articles or impact data is missing — rely on the news_txt field and compose the summary based on the available data.
+            When prioritizing emphasis, consider the fields reach_idx (reach scale), impact_scr (impact strength, -100..+100), duration_days (effect duration in days), geoscale_nm (geographic scale of the news impact), confidence_prt (confidence in the event occurring, 0.00 to 1.00) — if present.
 
-            Возвращай строго JSON объект с полями headline_txt и summary_txt.
-            Отвечай только на русском языке.
+            Return strictly a JSON object with the fields headline_txt and summary_txt.
+            Respond in Russian language only.
           """
 
           let prompt_text = """
-            Сюжет: """ + this.story_nm.string() + """
-            Дата: """ + this.dt.string() + """
+            Story: """ + this.story_nm.string() + """
+            Date: """ + this.dt.string() + """
 
-            Новости за день:
+            News for the day:
             """ + this.descriptions.string() + """
 
-            Твой ответ (только JSON, без пояснений):
+            Your response (JSON only, no explanations):
           """
 
           root = {
-            "model": $ai_model_name,
+            "model": "deepseek-v4-flash",
             "stream": false,
-            "options": {
-              "temperature": 0.3,
-              "top_p": 0.9
-            },
-            "system": $system_instruction,
-            "prompt": $prompt_text,
-            "format": {
-              "type": "object",
-              "properties": {
-                "headline_txt": {
-                  "type": "string",
-                  "description": "One sentence headline for the day"
-                },
-                "summary_txt": {
-                  "type": "string",
-                  "description": "3-5 sentence summary of the day's events"
-                }
-              },
-              "required": ["headline_txt", "summary_txt"]
-            }
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "response_format": { "type": "json_object" },
+            "messages": [
+              { "role": "system", "content": $system_instruction },
+              { "role": "user",   "content": $prompt_text }
+            ]
           }
         processors:
           - label: http
             http:
-              url: "http://dwh-ol-1:11434/api/generate"
+              url: "https://api.deepseek.com/chat/completions"
               verb: POST
               headers:
                 Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
               timeout: 3m
               retries: 3
               retry_period: "5s"
@@ -117,7 +103,7 @@ pipeline:
                   level: WARN
                   message: "❌ LLM API failed after retries: ${! error() }"
           - mapping: |
-              let result = this.response.parse_json().catch(null)
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
               root.ai_response = if $result != null { $result } else { null }
         result_map: |
           root.ai_response = this.ai_response
