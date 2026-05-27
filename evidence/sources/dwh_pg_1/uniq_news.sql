@@ -4,4 +4,4 @@ SELECT
     , language_code
     , title_txt
     , summary_txt
-FROM dm.uniq_news
+FROM bds.b_news_unified

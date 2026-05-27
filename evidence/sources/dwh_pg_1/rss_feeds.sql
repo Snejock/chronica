@@ -1,2 +1,2 @@
 SELECT *
-FROM dm.rss_feeds
+FROM bds.b_rss_feeds

@@ -5,4 +5,4 @@ SELECT
     , language_code
     , headline_txt
     , summary_txt
-FROM dds.s_story_daily_summaries
+FROM dm.stories_summaries_d
