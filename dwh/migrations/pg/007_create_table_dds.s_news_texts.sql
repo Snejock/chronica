@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS dds.s_news_texts (
     language_code   text NOT NULL,
     title_txt       text,
     summary_txt     text,
+    model_nm        text NOT NULL,
 
     CONSTRAINT s_news_texts_pkey
-        PRIMARY KEY (news_id, language_code)
+        PRIMARY KEY (news_id, language_code, model_nm)
 );
