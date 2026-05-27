@@ -70,24 +70,34 @@ pipeline:
         request_map: |
           root = if this.is_en_translation_needed {
             {
-              "model": "deepseek-v4-flash:cloud",
+              "model": "deepseek-v4-flash",
               "stream": false,
-              "options": {"temperature": 0.0, "top_p": 0.1},
-              "system": "You are a highly skilled professional translator. Translate ALL text values into English. Return ONLY the translated JSON.",
-              "prompt": {"title": this.title, "summary": this.summary}.string(),
-              "format": {"type": "object", "properties": {"title": {"type": "string"}, "summary": {"type": "string"}}, "required": ["title", "summary"]}
+              "temperature": 0.0,
+              "top_p": 0.1,
+              "response_format": { "type": "json_object" },
+              "messages": [
+                { "role": "system", "content": "You are a highly skilled professional translator. Translate ALL text values into English. Return ONLY the translated JSON." },
+                { "role": "user",   "content": {"title": this.title, "summary": this.summary}.string() }
+              ]
             }
           } else { deleted() }
         processors:
-          - try:
-              - label: http_translate_en
-                http:
-                  url: "http://dwh-ol-1:11434/api/generate"
-                  verb: POST
-                  headers: {Content-Type: "application/json"}
-                  timeout: 5m
+          - label: http_translate_en
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
           - mapping: |
-              let result = this.response.parse_json().catch(null)
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
               root.translated_title = if $result != null { $result.title } else { null }
               root.translated_summary = if $result != null { $result.summary } else { null }
         result_map: |
@@ -99,24 +109,34 @@ pipeline:
         request_map: |
           root = if this.is_ru_translation_needed {
             {
-              "model": "deepseek-v4-flash:cloud",
+              "model": "deepseek-v4-flash",
               "stream": false,
-              "options": {"temperature": 0.0, "top_p": 0.1},
-              "system": "You are a highly skilled professional translator. Translate ALL text values into Russian. Return ONLY the translated JSON.",
-              "prompt": {"title": this.title, "summary": this.summary}.string(),
-              "format": {"type": "object", "properties": {"title": {"type": "string"}, "summary": {"type": "string"}}, "required": ["title", "summary"]}
+              "temperature": 0.0,
+              "top_p": 0.1,
+              "response_format": { "type": "json_object" },
+              "messages": [
+                { "role": "system", "content": "You are a highly skilled professional translator. Translate ALL text values into Russian. Return ONLY the translated JSON." },
+                { "role": "user",   "content": {"title": this.title, "summary": this.summary}.string() }
+              ]
             }
           } else { deleted() }
         processors:
-          - try:
-              - label: http_translate_ru
-                http:
-                  url: "http://dwh-ol-1:11434/api/generate"
-                  verb: POST
-                  headers: { Content-Type: "application/json" }
-                  timeout: 5m
+          - label: http_translate_ru
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
           - mapping: |
-              let result = this.response.parse_json().catch(null)
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
               root.translated_title = if $result != null { $result.title } else { null }
               root.translated_summary = if $result != null { $result.summary } else { null }
         result_map: |
@@ -142,25 +162,38 @@ pipeline:
     - mapping: |
         root = []
 
+        # оригинал
+        if this.link != null && this.title != null {
+          root = root.append({
+            "link": this.link,
+            "language_code": this.language_code,
+            "title": this.title,
+            "summary": this.summary,
+            "model_nm": ""
+          })
+        }
+
+        # перевод EN
         if this.translated_title_en != null && this.translated_summary_en != null {
           root = root.append({
             "link": this.link,
             "language_code": "en",
             "title": this.translated_title_en,
-            "summary": this.translated_summary_en
+            "summary": this.translated_summary_en,
+            "model_nm": "deepseek-v4-flash:cloud"
           })
         }
 
+        # перевод RU
         if this.translated_title_ru != null && this.translated_summary_ru != null {
           root = root.append({
             "link": this.link,
             "language_code": "ru",
             "title": this.translated_title_ru,
-            "summary": this.translated_summary_ru
+            "summary": this.translated_summary_ru,
+            "model_nm": "deepseek-v4-flash:cloud"
           })
         }
-
-        root = if root.length() == 0 { deleted() } else { root }
 
     - unarchive:
         format: json_array
@@ -179,15 +212,16 @@ output:
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
             INSERT INTO dds.s_news_texts (
-              news_id, language_code, title_txt, summary_txt
-            ) VALUES (xxh64($1), $2, $3, $4)
-            ON CONFLICT (news_id, language_code) DO NOTHING;
+              news_id, language_code, title_txt, summary_txt, model_nm
+            ) VALUES (xxh64($1), $2, $3, $4, $5)
+            ON CONFLICT (news_id, language_code, model_nm) DO NOTHING;
           args_mapping: |
             root = [
               this.link.string().or(""),
               this.language_code.string().or("unknown"),
               this.title.string().or(""),
-              this.summary.string().or("")
+              this.summary.string().or(""),
+              this.model_nm
             ]
           batching:
             count: 5
