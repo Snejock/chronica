@@ -1,4 +1,5 @@
-CREATE OR REPLACE VIEW dm.rss_feeds AS
+-- DROP VIEW IF EXISTS bds.b_rss_feeds;
+CREATE OR REPLACE VIEW bds.b_rss_feeds AS
 SELECT
     feed_id
     , feed_nm

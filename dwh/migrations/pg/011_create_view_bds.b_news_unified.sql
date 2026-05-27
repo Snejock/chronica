@@ -1,5 +1,5 @@
-DROP MATERIALIZED VIEW IF EXISTS dm.uniq_news CASCADE;
-CREATE MATERIALIZED VIEW dm.uniq_news AS
+DROP MATERIALIZED VIEW IF EXISTS bds.b_news_unified CASCADE;
+CREATE MATERIALIZED VIEW bds.b_news_unified AS
 WITH uniq_news AS (
     SELECT
         ne.news_id
@@ -20,7 +20,8 @@ WITH uniq_news AS (
                       WHERE ne.embedding_vct <=> closest_match.embedding_vct < 0.20)
 )
 SELECT
-    u.news_id
+    now()::timestamptz(0) AS _loaded_dttm
+    , u.news_id
     , h.published_dttm
     , d.feed_nm
     , s.language_code
@@ -31,7 +32,7 @@ SELECT
 FROM uniq_news u
 JOIN dds.h_news h ON u.news_id = h.news_id
 JOIN dds.d_rss_feeds d ON h.feed_id = d.feed_id
-JOIN dds.s_news_texts s ON u.news_id = s.news_id
+JOIN dds.s_news_texts s ON u.news_id = s.news_id AND s.language_code IN ('en', 'ru')
 ;
 
-CREATE INDEX uniq_news_embedding_idx ON dm.uniq_news USING hnsw (embedding_vct vector_cosine_ops);
+CREATE INDEX b_news_unified_embedding_idx ON bds.b_news_unified USING hnsw (embedding_vct vector_cosine_ops);

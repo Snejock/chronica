@@ -26,7 +26,7 @@ pipeline:
                         'geoscale_nm', geoscale_nm,
                         'confidence_prt', confidence_prt,
                         'reason_txt', reason_txt)) AS description
-                FROM dm.uniq_news_stories s
+                FROM bds.b_stories_news s
                 LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id
                 WHERE s.language_code = 'ru'
                   AND (s.published_dttm AT TIME ZONE 'UTC')::date >= CASE
@@ -116,7 +116,7 @@ pipeline:
                 message: '[🧠 LLM ANALYZED] Link: ${! this.story_id } | Headline: ${! this.ai_response.headline_txt} | Summary: ${! this.ai_response.summary_txt.string() }'
 
 output:
-  label: load_dds_s_story_daily_summaries
+  label: load_dm_stories_summaries_d
   broker:
     pattern: fan_out
     outputs:
@@ -125,7 +125,7 @@ output:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dds.s_story_daily_summaries (
+            INSERT INTO dm.stories_summaries_d (
               story_id, dt, model_nm, language_code, headline_txt, summary_txt
             ) VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (story_id, dt, model_nm, language_code) DO UPDATE SET
