@@ -8,9 +8,8 @@ CREATE TABLE IF NOT EXISTS dds.s_news_ticker_reactions (
     category_nm     text,
     impact_scr      smallint,
     confidence_prt  numeric(3, 2),
-    language_code   text NOT NULL,
     reason_txt      text,
 
     CONSTRAINT s_news_ticker_reactions_pkey
-        PRIMARY KEY (news_id, ticker_code, model_nm, language_code)
+        PRIMARY KEY (news_id, ticker_code, model_nm)
 );
