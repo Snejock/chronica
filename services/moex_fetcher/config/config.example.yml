@@ -1,0 +1,56 @@
+clickhouse:
+  host: "<CLICKHOUSE_HOST>"
+  port: 8123
+  user: "<CLICKHOUSE_USER>"
+  password: "<CLICKHOUSE_PASSWORD>"
+  secure: false
+
+moex_calendar:
+  timezone: "Europe/Moscow"
+
+  # сдвиги окна работы приложения относительно базового расписания
+  lag_start_minutes: 10
+  lag_stop_minutes: 20
+
+  # базовое расписание по дням недели (ISO: 1=Пн ... 7=Вс)
+  weekly:
+    - week_day: 1
+      is_work_day: 1
+      start_time: "06:20:00"
+      stop_time:  "23:59:59"
+    - week_day: 2
+      is_work_day: 1
+      start_time: "06:20:00"
+      stop_time:  "23:59:59"
+    - week_day: 3
+      is_work_day: 1
+      start_time: "06:20:00"
+      stop_time:  "23:59:59"
+    - week_day: 4
+      is_work_day: 1
+      start_time: "06:20:00"
+      stop_time:  "23:59:59"
+    - week_day: 5
+      is_work_day: 1
+      start_time: "06:20:00"
+      stop_time:  "23:59:59"
+    - week_day: 6
+      is_work_day: 1
+      start_time: "06:20:00"
+      stop_time:  "23:59:59"
+    - week_day: 7
+      is_work_day: 1
+      start_time: "06:20:00"
+      stop_time:  "23:59:59"
+
+  # Индивидуальные правила на конкретные даты (перекрывают weekly)
+  special:
+    - date: "2026-01-01"          # YYYY-MM-DD
+      is_work_day: 0              # 0 = выходной, 1 = рабочий
+      start_time: "06:00:00"
+      stop_time:  "23:59:59"
+    - date: "2026-01-07"
+      is_work_day: 0
+      start_time: "06:00:00"
+      stop_time:  "23:59:59"
+    # Добавляйте даты по мере необходимости

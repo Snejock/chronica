@@ -1,0 +1,74 @@
+# Python bytecode и cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Assembly/distribution
+build/
+dist/
+.eggs/
+*.egg
+*.egg-info/
+.venv/
+venv/
+env/
+ENV/
+
+
+# Tests and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytype/
+.mypy_cache/
+pytestdebug.log
+
+# Linters/formatters/tools
+.ruff_cache/
+.pdm.toml
+.pdm-python
+.dmypy.json
+.pyre/
+.pyright/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.code-workspace
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Logs
+log/*
+!log/.gitkeep
+*.log
+
+# Sessions
+.sessions/*
+!.sessions/.gitkeep
+*.session
+*.session-journal
+
+# Configs and secrets (local)
+config/*.yml
+!config/config.example.yml
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.pub
+*.crt
+*.p12
+*.pfx
+
+# Cache/other
+.cache/
+.ipynb_checkpoints/
+.ropeproject/

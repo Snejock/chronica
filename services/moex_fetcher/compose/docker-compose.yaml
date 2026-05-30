@@ -1,0 +1,32 @@
+name: chronica
+
+services:
+  chr-moex-fetcher:
+    build:
+      context: ../../../
+      dockerfile: services/moex_fetcher/compose/Dockerfile
+    container_name: chr-moex-fetcher
+    env_file:
+      - path: ../../../common/.env.server
+        required: true
+    restart: unless-stopped
+    networks:
+      - dwh-net
+    volumes:
+      - ../config/config.yml:/app/services/moex_fetcher/config/config.yml:ro
+      - ../log:/app/services/moex_fetcher/log
+    environment:
+      - TZ=Europe/Moscow
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    init: true
+    command: ["python", "moex_fetcher.py"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dwh-net:
+    external: true
