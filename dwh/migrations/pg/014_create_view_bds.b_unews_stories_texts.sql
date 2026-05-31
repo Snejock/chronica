@@ -1,18 +1,17 @@
--- DROP VIEW IF EXISTS bds.b_stories_news;
-CREATE OR REPLACE VIEW bds.b_stories_news AS
+-- DROP VIEW IF EXISTS bds.b_unews_stories_texts;
+CREATE OR REPLACE VIEW bds.b_unews_stories_texts AS
 WITH
     story AS (
         SELECT story_id, story_nm, embedding_vct
         FROM bds.d_stories
         WHERE is_active = true
-        -- AND story_id = 1
         ),
     news AS (
         SELECT
             un.*
             , s.story_id
             , s.story_nm
-            , s.embedding_vct <=> un.embedding_vct AS distance
+            , s.embedding_vct <=> un.embedding_vct AS distance_prt
             , row_number() OVER (PARTITION BY story_id, news_id, language_code ORDER BY s.embedding_vct <=> un.embedding_vct) AS rn
         FROM bds.b_news_unified un
         JOIN story s ON un.embedding_vct <=> s.embedding_vct < 0.52)

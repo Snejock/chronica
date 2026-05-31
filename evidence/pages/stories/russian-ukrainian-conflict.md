@@ -147,7 +147,7 @@ ORDER BY forecast_id, published_dttm
 SELECT
     CAST(published_dttm AS DATE) AS day,
     COUNT(*) AS cnt
-FROM dwh_pg_1.b_stories_news
+FROM dwh_pg_1.b_unews_stories_texts
 WHERE story_id = 2
   AND published_dttm >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY 1

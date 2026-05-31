@@ -96,7 +96,7 @@ output:
   broker:
     pattern: fan_out
     outputs:
-      - label: out_postgres
+      - label: out_pg_s_news_embeddings
         sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
@@ -110,6 +110,47 @@ output:
               this.news_link.string().or(""),
               "embeddinggemma:300m",
               this.embedding.string()
+            ]
+          batching:
+            count: 5
+            period: 1s
+
+      - label: out_pg_t_news_stories
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            WITH story AS (
+                SELECT story_id, model_nm, embedding_vct
+                FROM bds.d_stories
+                WHERE is_active = true
+                  AND model_nm = $3
+            ),
+            ranked AS (
+                SELECT
+                    s.story_id,
+                    s.model_nm,
+                    (s.embedding_vct <=> $2::vector)::numeric(4, 3) AS distance_prt,
+                    row_number() OVER (PARTITION BY s.story_id ORDER BY s.embedding_vct <=> $2::vector) AS rn
+                FROM story s
+                WHERE s.embedding_vct <=> $2::vector < 0.52
+            )
+            INSERT INTO dds.t_news_stories (story_id, news_id, model_nm, published_dttm, distance_prt)
+            SELECT
+                r.story_id,
+                xxh64($1),
+                r.model_nm,
+                h.published_dttm,
+                r.distance_prt
+            FROM ranked r
+            JOIN dds.h_news h ON h.news_id = xxh64($1)
+            WHERE r.rn = 1
+            ON CONFLICT (story_id, news_id, model_nm) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.news_link.string().or(""),
+              this.embedding.string(),
+              "embeddinggemma:300m"
             ]
           batching:
             count: 5

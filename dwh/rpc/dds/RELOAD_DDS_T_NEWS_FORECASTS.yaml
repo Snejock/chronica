@@ -25,7 +25,7 @@ pipeline:
               ) ORDER BY f.forecast_id) AS forecasts
           FROM (SELECT
                     news_id, published_dttm, story_id, story_nm, language_code, news_txt
-                FROM bds.b_stories_news n
+                FROM bds.b_unews_stories_texts n
                 WHERE language_code = 'en'
                   AND EXISTS (
                       SELECT 1 FROM dds.d_forecasts f
