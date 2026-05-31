@@ -3,7 +3,7 @@ CREATE OR REPLACE VIEW bds.b_stories_news AS
 WITH
     story AS (
         SELECT story_id, story_nm, embedding_vct
-        FROM dds.d_stories
+        FROM bds.d_stories
         WHERE is_active = true
         -- AND story_id = 1
         ),
