@@ -43,14 +43,18 @@ pipeline:
             Your task is to conduct a deep analysis of the provided news article, evaluate its potential impact across several metrics, and return structured data in JSON format.
 
             **Important: You must return a JSON object with the following fields:**
-            - reach_idx (string) — exponential estimate of the number of people affected by the news (1k, 10k, 100k, 1m, 10m, 100m, 1b, 10b)
+            - reach_idx (string) — exponential estimate of the number of people affected by the news.
+              MUST be EXACTLY one of: "1k", "10k", "100k", "1m", "10m", "100m", "1b", "10b"
+              Do NOT use bare numbers (e.g. "1", "1000"), other units, or any value outside this list.
             - impact_scr (integer) — strength of the news impact on one person's life (1 — noise, 100 — fundamental changes)
             - duration_days (integer) — projected duration of the news effect in days (1, 7, 30, 90, 180, 365, 3650, 36500)
-            - geoscale_nm (string) — geographic scope. Strictly one of the following values:
+            - geoscale_nm (string) — geographic scope.
+              MUST be EXACTLY one of: "local", "national", "regional", "global"
               * "local" — local impact (city, state, region)
               * "national" — impact within a single country
               * "regional" — impact across multiple countries in one region (e.g., Europe, Middle East)
               * "global" — impact on the entire world
+              Do NOT use any value outside this list.
             - confidence_prt (float) — from 0.00 to 1.00. For events that have already occurred = 1.00
             - reason_txt (string) — brief explanation in Russian
 
@@ -153,14 +157,18 @@ output:
               root = if this.reaction == null || this.reaction == ""{ deleted() } else { this }
           - mapping: |
               let model = "deepseek-v4-flash:cloud"
-              
+              let reach_allowed = ["1k","10k","100k","1m","10m","100m","1b","10b"]
+              let geo_allowed   = ["local","national","regional","global"]
+              let reach = this.reaction.reach_idx.string().lowercase().catch("")
+              let geo   = this.reaction.geoscale_nm.string().lowercase().catch("")
+
               root = {
                 "news_link": this.news_link.string(),
                 "model_nm": $model,
-                "reach_idx": this.reaction.reach_idx.string(),
+                "reach_idx": if $reach_allowed.contains($reach) { $reach } else { null },
                 "impact_scr": this.reaction.impact_scr.number(),
                 "duration_days": this.reaction.duration_days.number(),
-                "geoscale_nm": this.reaction.geoscale_nm.string(),
+                "geoscale_nm": if $geo_allowed.contains($geo) { $geo } else { null },
                 "confidence_prt": this.reaction.confidence_prt.number(),
                 "reason_txt": this.reaction.reason_txt.string().catch("")
               }
