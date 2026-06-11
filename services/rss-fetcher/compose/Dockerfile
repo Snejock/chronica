@@ -25,7 +25,6 @@ COPY services/rss-fetcher/pyproject.toml ./services/rss-fetcher/
 RUN uv sync \
     --index-url https://mirrors.aliyun.com/pypi/simple \
     --default-index https://mirrors.aliyun.com/pypi/simple \
-    --frozen \
     --no-dev \
     --no-install-project \
     --package rss-fetcher
