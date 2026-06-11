@@ -15,6 +15,7 @@ wheels/
 
 # Environments
 .env
+.env.*
 
 # Logs
 *.log*
@@ -31,3 +32,4 @@ evidence/node_modules/
 evidence/build/
 evidence/.svelte-kit/
 evidence/.env
+
