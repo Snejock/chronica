@@ -1,5 +1,5 @@
 ---
-full_width: true
+full_width: false
 ---
 
 <script>
