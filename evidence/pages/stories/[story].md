@@ -1,5 +1,4 @@
 ---
-title: Конфликт России и Украины
 hide_breadcrumbs: true
 ---
 
@@ -15,6 +14,30 @@ hide_breadcrumbs: true
   $: hasMore = shown < q_stories_summaries.length;
 
   let hovered = {};
+
+  let truncated  = {};
+  let expanded   = {};
+  let fullHeight = {};
+
+  // Хроника событий: первый клик по карточке подсвечивает рамку,
+  // второй — переходит на страницу источников за день.
+  let selectedChronicle = null;
+
+  function clampDetect(node, uid) {
+    const measure = () => {
+      const lh = parseFloat(getComputedStyle(node).lineHeight) || 20;
+      fullHeight[uid] = node.scrollHeight;
+      const isTrunc = node.scrollHeight > lh * 4 + 4;
+      if (truncated[uid] !== isTrunc) {
+        truncated[uid] = isTrunc;
+        truncated = truncated;
+      }
+    };
+    requestAnimationFrame(measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    return { destroy() { ro.disconnect(); } };
+  }
 
   // Линейная интерполяция между двумя hex-цветами, t от 0 до 1
   function lerpColor(a, b, t) {
@@ -269,24 +292,43 @@ hide_breadcrumbs: true
       : { arrow: '▼', arrowColor: '#fca5a5', textColor: '#a8a29e', text: `${v.toFixed(1)}% за 24 ч.` };
   }
 
-  // Миникарта региона (как на странице /stories) — статичный Leaflet-просмотр
-  onMount(async () => {
-    if (!document.querySelector('link[data-leaflet]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      link.setAttribute('data-leaflet', '');
-      document.head.appendChild(link);
-    }
+  // Миникарта региона (как на странице /stories) — статичный Leaflet-просмотр.
+  // Координаты приходят асинхронно из q_story, поэтому карта появляется в DOM
+  // не сразу — инициализируем её через use:-action на момент монтирования
+  // самого элемента, а не через onMount всей страницы.
+  function leafletMap(node, params) {
+    let map;
+    let destroyed = false;
+    let initializing = false;
 
-    const L = (await import('leaflet')).default;
+    // Координаты могут прийти не сразу: при первом монтировании реактивные
+    // данные ещё не загрузились (lat/lon = NaN). use:-action без update()
+    // вызывается лишь раз, поэтому ждём через update() валидных значений.
+    async function tryInit({ lat, lon, zoom }) {
+      if (map || initializing || destroyed) return;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      initializing = true;
 
-    document.querySelectorAll('[data-leaflet-map]').forEach(el => {
-      const lat  = parseFloat(el.dataset.lat);
-      const lon  = parseFloat(el.dataset.lon);
-      const zoom = parseInt(el.dataset.zoom);
+      let cssReady;
+      let link = document.querySelector('link[data-leaflet]');
+      if (link) {
+        cssReady = Promise.resolve();
+      } else {
+        link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        link.setAttribute('data-leaflet', '');
+        cssReady = new Promise(resolve => { link.onload = resolve; });
+        document.head.appendChild(link);
+      }
 
-      const map = L.map(el, {
+      const [L] = await Promise.all([
+        import('leaflet').then(m => m.default),
+        cssReady,
+      ]);
+      if (destroyed) return;
+
+      map = L.map(node, {
         center: [lat, lon],
         zoom,
         zoomControl:      false,
@@ -312,8 +354,20 @@ hide_breadcrumbs: true
         opacity:     1,
         fillOpacity: 1,
       }).addTo(map);
-    });
-  });
+
+      requestAnimationFrame(() => map.invalidateSize());
+    }
+
+    tryInit(params);
+
+    return {
+      update: tryInit,
+      destroy() {
+        destroyed = true;
+        if (map) map.remove();
+      }
+    };
+  }
 </script>
 
 <style>
@@ -325,7 +379,17 @@ hide_breadcrumbs: true
   .forecast-carousel::-webkit-scrollbar {
     display: none;
   }
+  .card-text {
+    transition: max-height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
 </style>
+
+```sql q_story
+SELECT story_nm, CAST(geo_lat AS DOUBLE) AS geo_lat, CAST(geo_lon AS DOUBLE) AS geo_lon
+FROM dwh_pg_1.b_stories
+WHERE story_id = ${params.story}
+  AND language_code = 'ru'
+```
 
 ```sql q_stories_summaries
 SELECT
@@ -344,7 +408,7 @@ SELECT
     , summary_txt
 FROM dwh_pg_1.stories_summaries_d
 WHERE language_code = 'ru'
-  AND story_id = 2
+  AND story_id = ${params.story}
 ORDER BY dt DESC
 ```
 
@@ -352,7 +416,7 @@ ORDER BY dt DESC
 WITH latest AS (
     SELECT forecast_id, MAX(published_dttm) AS dttm
     FROM dwh_pg_1.b_forecasts_posteriors
-    WHERE language_code = 'ru' AND story_id = 2
+    WHERE language_code = 'ru' AND story_id = ${params.story}
     GROUP BY forecast_id
 ),
 prev AS (
@@ -360,7 +424,7 @@ prev AS (
     FROM dwh_pg_1.b_forecasts_posteriors b
     JOIN latest l ON l.forecast_id = b.forecast_id
     WHERE b.language_code = 'ru'
-      AND b.story_id = 2
+      AND b.story_id = ${params.story}
       AND b.published_dttm <= l.dttm - INTERVAL '24 hours'
     QUALIFY row_number() OVER (PARTITION BY b.forecast_id ORDER BY b.published_dttm DESC) = 1
 )
@@ -374,14 +438,14 @@ SELECT
 FROM dwh_pg_1.b_forecasts_posteriors b
 JOIN latest l ON l.forecast_id = b.forecast_id AND l.dttm = b.published_dttm
 LEFT JOIN prev p ON p.forecast_id = b.forecast_id
-WHERE b.language_code = 'ru' AND b.story_id = 2
+WHERE b.language_code = 'ru' AND b.story_id = ${params.story}
 ORDER BY b.p_posterior_prt DESC
 ```
 
 ```sql q_forecasts_history
 SELECT forecast_id, published_dttm, p_posterior_prt
 FROM dwh_pg_1.b_forecasts_posteriors
-WHERE language_code = 'ru' AND story_id = 2
+WHERE language_code = 'ru' AND story_id = ${params.story}
 ORDER BY forecast_id, published_dttm
 ```
 
@@ -390,11 +454,15 @@ SELECT
     CAST(published_dttm AS DATE) AS day,
     COUNT(*) AS cnt
 FROM dwh_pg_1.b_unews_stories_texts
-WHERE story_id = 2
+WHERE story_id = ${params.story}
   AND published_dttm >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY 1
 ORDER BY 1
 ```
+
+{#if q_story[0]}
+# {q_story[0].story_nm}
+{/if}
 
 ## Хроника событий
 
@@ -408,9 +476,11 @@ ORDER BY 1
     {@const _day = parseInt(_p[2])}
     {@const _mon = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][parseInt(_p[1])-1]}
 
-    <div class="relative mb-3"
-         on:mouseenter={() => { hovered[i]=true; hovered=hovered; }}
-         on:mouseleave={() => { hovered[i]=false; hovered=hovered; }}>
+    <a href="/stories/{params.story}/{entry.iso_dt}"
+       class="relative mb-3 block"
+       on:mouseenter={() => { hovered[i]=true; hovered=hovered; }}
+       on:mouseleave={() => { hovered[i]=false; hovered=hovered; }}
+       on:click={(e) => { if (selectedChronicle !== i) { e.preventDefault(); selectedChronicle = i; } }}>
 
       <!-- Дата (слева от вертикальной линии) -->
       <div class="absolute text-right select-none pointer-events-none" style="top:14px; left:-52px; width:22px">
@@ -425,21 +495,32 @@ ORDER BY 1
       <div class="absolute pointer-events-none" style="top:20px; left:-20px; width:20px; height:1px; background:#c4bca9; opacity:{hovered[i] ? 1 : 0}; transition:opacity 0.2s ease"></div>
 
       <!-- Карточка -->
-      <div class="rounded-xl px-4 py-3 border transition-colors" style="background:#faf9f7; border-color:{hovered[i] ? '#d6d3d1' : 'transparent'}">
+      <div class="rounded-xl px-4 py-3 border transition-colors" style="background:#faf9f7; border-color:{hovered[i] || expanded[i] || selectedChronicle === i ? '#d6d3d1' : 'transparent'}">
 
         <p class="text-sm font-medium leading-snug mb-2" style="color:#15140F">{entry.headline_txt}</p>
 
         {#if entry.summary_txt}
-          <p class="text-xs leading-relaxed" style="color:#57534e">{entry.summary_txt}</p>
+          <p use:clampDetect={i}
+             class="card-text text-sm leading-relaxed overflow-hidden mb-1"
+             style="color:#57534e; max-height:{expanded[i] ? (fullHeight[i] ? fullHeight[i] + 'px' : '600px') : truncated[i] === false ? 'none' : '6.5em'}; display:-webkit-box; -webkit-box-orient:vertical; line-clamp:{expanded[i] ? 'none' : 4}; -webkit-line-clamp:{expanded[i] ? 'none' : 4};"
+             >{entry.summary_txt}</p>
+          {#if truncated[i]}
+            <button type="button"
+              class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none transition-colors"
+              style="color:#a8a29e; background:none; border:none; padding:0"
+              onmouseover="this.style.color='#78716c'" onmouseout="this.style.color='#a8a29e'"
+              on:click|preventDefault|stopPropagation={() => { expanded[i] = !expanded[i]; expanded = expanded; }}>
+              {expanded[i] ? 'Скрыть' : 'Показать полностью'}
+              <span style="display:inline-flex; transform:rotate({expanded[i] ? '180deg' : '0deg'}); transition:transform 0.2s">
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                  <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+            </button>
+          {/if}
         {/if}
-
-        <a href="/stories/russian-ukrainian-conflict/{entry.iso_dt}"
-           on:click|stopPropagation
-           class="inline-flex items-center mt-3 text-xs"
-           style="color:#c4bca9"
-           onmouseover="this.style.color='#78716c'" onmouseout="this.style.color='#c4bca9'">Подробнее →</a>
       </div>
-    </div>
+    </a>
   {/each}
 
   {#if hasMore}
@@ -476,31 +557,31 @@ ORDER BY 1
          }}>
       <div class="flex items-start justify-between gap-2 mb-3">
         <p class="text-sm font-medium leading-snug" style="color:#15140F; min-height:2.6em">{f.forecast_nm}</p>
-        {#if selectedForecast === f.forecast_id}
-          <button type="button"
-            style="background:none; border:none; padding:0; cursor:pointer; line-height:1; flex-shrink:0; color:{openInfoId === f.forecast_id ? '#57534e' : '#c4bca9'}"
-            use:tappable
-            on:tap|stopPropagation={() => { openInfoId = openInfoId === f.forecast_id ? null : f.forecast_id; if (openInfoId) openChartId = null; }}>
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/>
-              <line x1="8" y1="7.2" x2="8" y2="11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-              <circle cx="8" cy="4.7" r="0.9" fill="currentColor"/>
-            </svg>
-          </button>
-        {/if}
       </div>
 
       <div class="flex items-center justify-between mb-3">
         <p class="text-3xl font-semibold tabular-nums" style="color:#15140F">{f.pct}%</p>
         {#if selectedForecast === f.forecast_id}
-          <button type="button"
-            style="background:none; border:none; padding:0; cursor:pointer; line-height:1; color:{openChartId === f.forecast_id ? '#57534e' : '#c4bca9'}"
-            use:tappable
-            on:tap|stopPropagation={() => { openChartId = openChartId === f.forecast_id ? null : f.forecast_id; if (openChartId) openInfoId = null; }}>
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-              <polyline points="1,12 4,7 7,9 10,4 14,6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+          <div class="flex items-center gap-3">
+            <button type="button"
+              style="background:none; border:none; padding:0; cursor:pointer; line-height:1; color:{openInfoId === f.forecast_id ? '#57534e' : '#c4bca9'}"
+              use:tappable
+              on:tap|stopPropagation={() => { openInfoId = openInfoId === f.forecast_id ? null : f.forecast_id; if (openInfoId) openChartId = null; }}>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/>
+                <line x1="8" y1="7.2" x2="8" y2="11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                <circle cx="8" cy="4.7" r="0.9" fill="currentColor"/>
+              </svg>
+            </button>
+            <button type="button"
+              style="background:none; border:none; padding:0; cursor:pointer; line-height:1; color:{openChartId === f.forecast_id ? '#57534e' : '#c4bca9'}"
+              use:tappable
+              on:tap|stopPropagation={() => { openChartId = openChartId === f.forecast_id ? null : f.forecast_id; if (openChartId) openInfoId = null; }}>
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                <polyline points="1,12 4,7 7,9 10,4 14,6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
         {/if}
       </div>
 
@@ -534,9 +615,11 @@ ORDER BY 1
 
 ## Карта событий
 
+{#if q_story[0]}
 <div class="not-prose mt-2 mb-10 rounded-xl overflow-hidden" style="background:#ffffff; height:200px">
-  <div data-leaflet-map="" data-lat="49" data-lon="32" data-zoom="5" style="height:100%; width:100%"></div>
+  <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5 }} style="height:100%; width:100%"></div>
 </div>
+{/if}
 
 <div class="not-prose mt-2 mb-10 rounded-xl border transition-colors overflow-hidden" style="background:#faf9f7; border-color:{activityOpen ? '#d6d3d1' : 'transparent'}">
   <button type="button"

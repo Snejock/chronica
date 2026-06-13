@@ -4,21 +4,6 @@ full_width: false
 ---
 
 <script>
-  const stories = [
-    {
-      id: 1, slug: 'persian-gulf-escalation',
-      category: 'Ближний Восток',
-      title: 'Эскалация в Персидском заливе',
-      lat: 26, lon: 56, zoom: 5, photoCount: 2,
-    },
-    {
-      id: 2, slug: 'russian-ukrainian-conflict',
-      category: 'Восточная Европа',
-      title: 'Конфликт России и Украины',
-      lat: 49, lon: 32, zoom: 5, photoCount: 2,
-    },
-  ];
-
   function relTime(dttm) {
     if (!dttm) return '';
     const diff = Date.now() - new Date(dttm).getTime();
@@ -90,11 +75,36 @@ full_width: false
     return `${n} ${many}`;
   }
 
-  $: enriched = stories.map(s => {
-    const headline = q_latest_headlines.find(r => +r.story_id === s.id) || null;
-    const upd      = q_last_update.find(r => +r.story_id === s.id) || null;
-    const activity = q_activity.filter(r => +r.story_id === s.id);
-    const forecast = q_top_forecast.find(r => +r.story_id === s.id) || null;
+  // Усечение блока с последними событиями до 2 строк + кнопка "Показать полностью"/"Скрыть"
+  let truncated  = {};
+  let expanded   = {};
+  let fullHeight = {};
+
+  function clampDetect(node, uid) {
+    const measure = () => {
+      const lh = parseFloat(getComputedStyle(node).lineHeight) || 20;
+      fullHeight[uid] = node.scrollHeight;
+      const isTrunc = node.scrollHeight > lh * 2 + 4;
+      if (truncated[uid] !== isTrunc) {
+        truncated[uid] = isTrunc;
+        truncated = truncated;
+      }
+    };
+    requestAnimationFrame(measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    return { destroy() { ro.disconnect(); } };
+  }
+
+  // Карточка ленты: первый клик подсвечивает рамкой (как выбор у карточек
+  // прогноза на странице сюжета), второй клик переходит на страницу сюжета.
+  let selectedCard = null;
+
+  $: enriched = q_stories.map(s => {
+    const headline = q_latest_headlines.find(r => +r.story_id === s.story_id) || null;
+    const upd      = q_last_update.find(r => +r.story_id === s.story_id) || null;
+    const activity = q_activity.filter(r => +r.story_id === s.story_id);
+    const forecast = q_top_forecast.find(r => +r.story_id === s.story_id) || null;
     const total30  = activity.reduce((sum, r) => sum + +r.cnt, 0);
     return { ...s, headline, upd, activity, forecast, total30 };
   }).sort((a, b) => {
@@ -104,24 +114,34 @@ full_width: false
     return b.total30 - a.total30;
   });
 
-  onMount(async () => {
-    // Загружаем Leaflet CSS
-    if (!document.querySelector('link[data-leaflet]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      link.setAttribute('data-leaflet', '');
-      document.head.appendChild(link);
-    }
+  // Миникарта региона — карточки рендерятся асинхронно (данные из БД),
+  // поэтому карту инициализируем через use:-action на момент появления
+  // самого элемента, а не через onMount + querySelectorAll.
+  function leafletMap(node, { lat, lon, zoom }) {
+    let map;
+    let destroyed = false;
 
-    const L = (await import('leaflet')).default;
+    (async () => {
+      let cssReady;
+      let link = document.querySelector('link[data-leaflet]');
+      if (link) {
+        cssReady = Promise.resolve();
+      } else {
+        link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        link.setAttribute('data-leaflet', '');
+        cssReady = new Promise(resolve => { link.onload = resolve; });
+        document.head.appendChild(link);
+      }
 
-    document.querySelectorAll('[data-leaflet-map]').forEach(el => {
-      const lat  = parseFloat(el.dataset.lat);
-      const lon  = parseFloat(el.dataset.lon);
-      const zoom = parseInt(el.dataset.zoom);
+      const [L] = await Promise.all([
+        import('leaflet').then(m => m.default),
+        cssReady,
+      ]);
+      if (destroyed) return;
 
-      const map = L.map(el, {
+      map = L.map(node, {
         center: [lat, lon],
         zoom,
         zoomControl:      false,
@@ -149,8 +169,17 @@ full_width: false
         opacity:     1,
         fillOpacity: 1,
       }).addTo(map);
-    });
-  });
+
+      requestAnimationFrame(() => map.invalidateSize());
+    })();
+
+    return {
+      destroy() {
+        destroyed = true;
+        if (map) map.remove();
+      }
+    };
+  }
 </script>
 
 <style>
@@ -168,7 +197,23 @@ full_width: false
   .carousel-scroll::-webkit-scrollbar {
     display: none;
   }
+  .card-text {
+    transition: max-height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .story-card {
+    border-color: transparent;
+  }
+  .story-card:hover,
+  .story-card.story-card-selected {
+    border-color: #d6d3d1;
+  }
 </style>
+
+```sql q_stories
+SELECT story_id, story_nm, geo_lat, geo_lon
+FROM dwh_pg_1.b_stories
+WHERE language_code = 'ru'
+```
 
 ```sql q_latest_headlines
 SELECT story_id, dt, headline_txt, summary_txt
@@ -206,17 +251,20 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
 ```
 
 {#each enriched as story}
-{@const total = (story.photoCount || 0) + 1}
-{@const slide = activeSlide[story.id] || 0}
-<a href="/stories/{story.slug}"
-   class="not-prose block rounded-xl mb-4 border transition-colors overflow-hidden"
-   style="background:#faf9f7; border-color:transparent"
-   onmouseover="this.style.borderColor='#d6d3d1'" onmouseout="this.style.borderColor='transparent'"
-   on:click={(e) => { if (drag[story.id]?.moved) { e.preventDefault(); drag[story.id] = {...drag[story.id], moved: false}; } }}>
+{@const total = 1}
+{@const slide = activeSlide[story.story_id] || 0}
+<a href="/stories/{story.story_id}"
+   class="story-card not-prose block rounded-xl mb-4 border transition-colors overflow-hidden"
+   class:story-card-selected={selectedCard === story.story_id}
+   style="background:#faf9f7"
+   on:click={(e) => {
+     if (drag[story.story_id]?.moved) { e.preventDefault(); drag[story.story_id] = {...drag[story.story_id], moved: false}; return; }
+     if (selectedCard !== story.story_id) { e.preventDefault(); selectedCard = story.story_id; }
+   }}>
 
   <!-- Заголовок -->
   <div class="px-5 pt-4 pb-3">
-    <p class="text-base font-semibold leading-snug" style="color:#15140F">{story.title}</p>
+    <p class="text-base font-semibold leading-snug" style="color:#15140F">{story.story_nm}</p>
   </div>
 
   <!-- Карусель: карта региона + фотографии -->
@@ -225,46 +273,20 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
     <!-- Скролл-контейнер (scroll-snap + drag мышью) -->
     <div class="carousel-scroll flex h-full"
          style="overflow-x:auto; scroll-snap-type:x mandatory"
-         bind:this={scrollers[story.id]}
-         on:scroll={(e) => onScroll(e, story.id)}
-         on:pointerdown={(e) => onPointerDown(e, story.id)}
-         on:pointermove={(e) => onPointerMove(e, story.id)}
-         on:pointerup={(e) => onPointerUp(e, story.id)}
-         on:pointerleave={(e) => onPointerUp(e, story.id)}>
+         bind:this={scrollers[story.story_id]}
+         on:scroll={(e) => onScroll(e, story.story_id)}
+         on:pointerdown={(e) => onPointerDown(e, story.story_id)}
+         on:pointermove={(e) => onPointerMove(e, story.story_id)}
+         on:pointerup={(e) => onPointerUp(e, story.story_id)}
+         on:pointerleave={(e) => onPointerUp(e, story.story_id)}>
 
       <!-- Слайд 0: миникарта (Leaflet) -->
       <div class="flex-shrink-0 h-full" style="width:100%; scroll-snap-align:start">
         <div
-          data-leaflet-map=""
-          data-lat="{story.lat}"
-          data-lon="{story.lon}"
-          data-zoom="{story.zoom}"
+          use:leafletMap={{ lat: +story.geo_lat, lon: +story.geo_lon, zoom: 5 }}
           style="height:100%; width:100%">
         </div>
       </div>
-
-      <!-- Слайды-заглушки под фотографии: яркий фон, чтобы было видно глассморфизм -->
-      {#each Array(story.photoCount || 0) as _, i}
-        <div class="story-slide flex-shrink-0 h-full flex items-center justify-center"
-             style="width:100%; scroll-snap-align:start; background:{i % 2 === 0 ? 'linear-gradient(135deg, #e3b07a 0%, #a9683f 100%)' : 'linear-gradient(135deg, #93b6c7 0%, #4f7689 100%)'}">
-          <!-- Стеклянная карточка поверх фона -->
-          <div class="flex flex-col items-center gap-1.5 px-5 py-3 rounded-xl"
-               style="background:rgba(255,255,255,0.16); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,0.35); box-shadow:0 6px 20px rgba(0,0,0,0.12)">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.9">
-              <rect x="3" y="3" width="18" height="18" rx="2"/>
-              <circle cx="8.5" cy="8.5" r="1.5"/>
-              <path d="M21 15l-5-5L5 21"/>
-            </svg>
-            <span class="text-xs font-medium" style="color:#ffffff">Фотография {i + 1}</span>
-          </div>
-        </div>
-      {/each}
-    </div>
-
-    <!-- Бейдж категории поверх карусели -->
-    <div class="absolute top-3 left-4 pointer-events-none" style="z-index:1000">
-      <span class="text-xs font-medium uppercase tracking-wide px-2 py-0.5 rounded-full"
-            style="background:rgba(250,249,247,0.55); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.4); color:#57534e; letter-spacing:0.06em">{story.category}</span>
     </div>
 
     {#if total > 1}
@@ -272,8 +294,8 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
       <div class="absolute left-0 top-0 bottom-0 flex items-center justify-center select-none cursor-pointer"
            style="width:36px; z-index:500"
            role="button" tabindex="0"
-           on:click|preventDefault|stopPropagation={() => goToSlide(story.id, (slide - 1 + total) % total)}
-           on:keydown={(e) => onKeyActivate(e, () => goToSlide(story.id, (slide - 1 + total) % total))}
+           on:click|preventDefault|stopPropagation={() => goToSlide(story.story_id, (slide - 1 + total) % total)}
+           on:keydown={(e) => onKeyActivate(e, () => goToSlide(story.story_id, (slide - 1 + total) % total))}
            aria-label="Предыдущий слайд">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#57534e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 2L4 7L9 12"/>
@@ -284,8 +306,8 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
       <div class="absolute right-0 top-0 bottom-0 flex items-center justify-center select-none cursor-pointer"
            style="width:36px; z-index:500"
            role="button" tabindex="0"
-           on:click|preventDefault|stopPropagation={() => goToSlide(story.id, (slide + 1) % total)}
-           on:keydown={(e) => onKeyActivate(e, () => goToSlide(story.id, (slide + 1) % total))}
+           on:click|preventDefault|stopPropagation={() => goToSlide(story.story_id, (slide + 1) % total)}
+           on:keydown={(e) => onKeyActivate(e, () => goToSlide(story.story_id, (slide + 1) % total))}
            aria-label="Следующий слайд">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#57534e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M5 2L10 7L5 12"/>
@@ -298,8 +320,8 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
           <div role="button" tabindex="0"
                class="rounded-full select-none cursor-pointer"
                style="width:5px; height:5px; background:{slide === i ? '#ffffff' : 'rgba(255,255,255,0.55)'}; transition:background 0.2s ease"
-               on:click|preventDefault|stopPropagation={() => goToSlide(story.id, i)}
-               on:keydown={(e) => onKeyActivate(e, () => goToSlide(story.id, i))}
+               on:click|preventDefault|stopPropagation={() => goToSlide(story.story_id, i)}
+               on:keydown={(e) => onKeyActivate(e, () => goToSlide(story.story_id, i))}
                aria-label="Слайд {i + 1}"></div>
         {/each}
       </div>
@@ -311,7 +333,24 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
     {#if story.headline}
       <p class="text-sm font-medium leading-snug mb-2" style="color:#15140F">{story.headline.headline_txt}</p>
       {#if story.headline.summary_txt}
-        <p class="text-xs leading-relaxed" style="color:#57534e">{story.headline.summary_txt}</p>
+        <p use:clampDetect={story.story_id}
+           class="card-text text-sm leading-relaxed overflow-hidden mb-1"
+           style="color:#57534e; max-height:{expanded[story.story_id] ? (fullHeight[story.story_id] ? fullHeight[story.story_id] + 'px' : '600px') : truncated[story.story_id] === false ? 'none' : '3.3em'}; display:-webkit-box; -webkit-box-orient:vertical; line-clamp:{expanded[story.story_id] ? 'none' : 2}; -webkit-line-clamp:{expanded[story.story_id] ? 'none' : 2};"
+           >{story.headline.summary_txt}</p>
+        {#if truncated[story.story_id]}
+          <button type="button"
+            class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none transition-colors"
+            style="color:#a8a29e; background:none; border:none; padding:0"
+            onmouseover="this.style.color='#57534e'" onmouseout="this.style.color='#a8a29e'"
+            on:click|preventDefault|stopPropagation={() => { expanded[story.story_id] = !expanded[story.story_id]; expanded = expanded; }}>
+            {expanded[story.story_id] ? 'Скрыть' : 'Показать полностью'}
+            <span style="display:inline-flex; transform:rotate({expanded[story.story_id] ? '180deg' : '0deg'}); transition:transform 0.2s">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+        {/if}
       {/if}
     {/if}
 

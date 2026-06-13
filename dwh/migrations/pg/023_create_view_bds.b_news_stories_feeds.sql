@@ -1,4 +1,4 @@
--- DROP VIEW IF EXISTS bds.b_news_stories;
+-- DROP VIEW IF EXISTS bds.b_news_stories_feeds;
 CREATE OR REPLACE VIEW bds.b_news_stories_feeds AS
 SELECT
     n.story_id

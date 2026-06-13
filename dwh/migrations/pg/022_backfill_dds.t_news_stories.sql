@@ -1,6 +1,6 @@
 WITH story AS (
     SELECT story_id, model_nm, embedding_vct
-    FROM bds.d_stories
+    FROM dds.s_story_storylines
     WHERE is_active = true
 ),
 ranked AS (

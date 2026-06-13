@@ -48,17 +48,15 @@ hide_breadcrumbs: true
   let activeCountry = null;
   let activeFeed = null;
 
-  let truncated      = {};
-  let expanded       = {};
-  let hovered        = {};
-  let gradientHidden = {};
-  let gradientTimers = {};
+  let truncated  = {};
+  let expanded   = {};
+  let hovered    = {};
+  let fullHeight = {};
 
   function clampDetect(node, uid) {
     const measure = () => {
-      // Сравниваем полную высоту контента с порогом 3 строк,
-      // а не с clientHeight — чтобы hover/expand не сбивали детект.
       const lh = parseFloat(getComputedStyle(node).lineHeight) || 20;
+      fullHeight[uid] = node.scrollHeight;
       const isTrunc = node.scrollHeight > lh * 3 + 4;
       if (truncated[uid] !== isTrunc) {
         truncated[uid] = isTrunc;
@@ -104,13 +102,6 @@ hide_breadcrumbs: true
   .card-text {
     transition: max-height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .card-gradient {
-    opacity: 1;
-    transition: opacity 0.3s ease;
-  }
-  .card-gradient.faded {
-    opacity: 0;
-  }
 </style>
 
 ```sql q_news_feed
@@ -124,13 +115,13 @@ SELECT
     , title_txt
     , summary_txt
 FROM dwh_pg_1.b_news_stories_feeds
-WHERE story_id = 2
+WHERE story_id = ${params.story}
   AND CAST(published_dttm AS DATE) = '${params.day}'::date
 ORDER BY published_dttm DESC
 ```
 
 <div class="not-prose mt-6 mb-5 flex items-center gap-3">
-<a href="/stories/russian-ukrainian-conflict"
+<a href="/stories/{params.story}"
      class="inline-flex items-center px-2 py-1 rounded-full text-sm flex-shrink-0 transition-colors"
      style="color:#78716c; border:1px solid transparent; background:#fafaf9;"
      onmouseover="this.style.borderColor='#d6d3d1'" onmouseout="this.style.borderColor='transparent'">←</a>
@@ -210,10 +201,8 @@ ORDER BY published_dttm DESC
         {#each group.items as item}
           {@const _t = new Date(item.published_dttm).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}
           <div class="group relative mb-3"
-               class:cursor-pointer={truncated[item.uid]}
-               on:mouseenter={() => { hovered[item.uid] = true; hovered = hovered; clearTimeout(gradientTimers[item.uid]); gradientHidden[item.uid] = true; gradientHidden = gradientHidden; }}
-               on:mouseleave={() => { hovered[item.uid] = false; hovered = hovered; clearTimeout(gradientTimers[item.uid]); gradientTimers[item.uid] = setTimeout(() => { gradientHidden[item.uid] = false; gradientHidden = gradientHidden; }, 150); }}
-               on:click={() => { if (truncated[item.uid]) { expanded[item.uid] = !expanded[item.uid]; expanded = expanded; } }}>
+               on:mouseenter={() => { hovered[item.uid] = true; hovered = hovered; }}
+               on:mouseleave={() => { hovered[item.uid] = false; hovered = hovered; }}>
 
             <!-- Время (слева от вертикальной линии) -->
             <div class="absolute text-right select-none pointer-events-none" style="top:14px; left:-60px; width:30px">
@@ -260,19 +249,26 @@ ORDER BY published_dttm DESC
                 </div>
               {/if}
 
-              <!-- Раскрытие текста: hover → полностью, клик → фиксация -->
+              <!-- Раскрытие текста по кнопке -->
               {#if item.summary_txt}
-                <div class="relative">
-                  <p use:clampDetect={item.uid}
-                     class="card-text text-xs leading-relaxed overflow-hidden"
-                     style="color:#57534e; max-height:{expanded[item.uid] || hovered[item.uid] ? '600px' : truncated[item.uid] === false ? 'none' : '4.9em'}"
-                     >{item.summary_txt}</p>
-                  {#if truncated[item.uid] && !expanded[item.uid]}
-                    <div class="card-gradient pointer-events-none absolute inset-x-0 bottom-0 h-6"
-                         class:faded={gradientHidden[item.uid]}
-                         style="background:linear-gradient(to bottom, rgba(250,249,247,0), #faf9f7)"></div>
-                  {/if}
-                </div>
+                <p use:clampDetect={item.uid}
+                   class="card-text text-sm leading-relaxed overflow-hidden mb-1"
+                   style="color:#57534e; max-height:{expanded[item.uid] ? (fullHeight[item.uid] ? fullHeight[item.uid] + 'px' : '600px') : truncated[item.uid] === false ? 'none' : '4.9em'}; display:-webkit-box; -webkit-box-orient:vertical; line-clamp:{expanded[item.uid] ? 'none' : 3}; -webkit-line-clamp:{expanded[item.uid] ? 'none' : 3};"
+                   >{item.summary_txt}</p>
+                {#if truncated[item.uid]}
+                  <button type="button"
+                    class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none transition-colors"
+                    style="color:#a8a29e; background:none; border:none; padding:0"
+                    onmouseover="this.style.color='#78716c'" onmouseout="this.style.color='#a8a29e'"
+                    on:click|preventDefault|stopPropagation={() => { expanded[item.uid] = !expanded[item.uid]; expanded = expanded; }}>
+                    {expanded[item.uid] ? 'Скрыть' : 'Показать полностью'}
+                    <span style="display:inline-flex; transform:rotate({expanded[item.uid] ? '180deg' : '0deg'}); transition:transform 0.2s">
+                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                        <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                  </button>
+                {/if}
               {/if}
 
             </div>
