@@ -11,5 +11,5 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = [".."]
-include = ["common"]
+where = ["."]
+include = ["*"]
