@@ -46,6 +46,7 @@ class Application:
                                 # Отправка в брокер
                                 payload = item.model_dump()
                                 payload["published_utc"] = int(item.published_utc.timestamp())
+                                payload["image_url"] = item.image_url or ""
                                 self.br_provider.produce(payload, topic=self.config.rss_fetcher.topic)
 
                                 if item.published_utc > max_cursor:

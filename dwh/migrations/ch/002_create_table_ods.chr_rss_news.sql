@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS ods.kafka_rss_news;
 CREATE TABLE IF NOT EXISTS ods.kafka_rss_news
 (
     source_system   LowCardinality(String),
@@ -6,7 +7,8 @@ CREATE TABLE IF NOT EXISTS ods.kafka_rss_news
     feed_nm         LowCardinality(String),
     title           String,
     summary         Nullable(String),
-    link            Nullable(String)
+    link            Nullable(String),
+    image_url       Nullable(String)
 )
 ENGINE = Kafka
 SETTINGS kafka_broker_list = 'dwh-rp-1:9092',
@@ -16,6 +18,7 @@ SETTINGS kafka_broker_list = 'dwh-rp-1:9092',
          format_avro_schema_registry_url = 'http://dwh-rp-1:8081'
 ;
 
+DROP TABLE IF EXISTS ods.rss_news;
 CREATE TABLE IF NOT EXISTS ods.rss_news
 (
     _loaded_dttm        DateTime DEFAULT now(),
@@ -26,12 +29,14 @@ CREATE TABLE IF NOT EXISTS ods.rss_news
     feed_nm             LowCardinality(String),
     title               String,
     summary             String,
-    link                String
+    link                String,
+    image_url           String
 )
 ENGINE = ReplacingMergeTree
 ORDER BY (news_id)
 ;
 
+DROP VIEW IF EXISTS ods.mv_rss_news;
 CREATE MATERIALIZED VIEW IF NOT EXISTS ods.mv_rss_news TO ods.rss_news AS
     SELECT
         source_system           AS _source_system,
@@ -41,6 +46,7 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS ods.mv_rss_news TO ods.rss_news AS
         feed_nm,
         title,
         coalesce(summary, '')   AS summary,
-        coalesce(link, '')      AS link
+        coalesce(link, '')      AS link,
+        coalesce(image_url, '') AS image_url
     FROM ods.kafka_rss_news
 ;

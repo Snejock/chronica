@@ -55,5 +55,6 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
-        env_nested_delimiter="__"
+        env_nested_delimiter="__",
+        extra="ignore"
     )

@@ -13,6 +13,7 @@ class RSSNews(BaseModel):
     title:          Annotated[str, Field(..., min_length=1, description="Заголовок сообщения")]
     link:           Annotated[str, Field(..., description="Ссылка на сообщение")]
     summary:        Annotated[str | None, Field(description="Краткое содержание")]
+    image_url:      Annotated[str | None, Field(default=None, description="Ссылка на изображение")]
 
     @property
     def published_utc(self) -> datetime:

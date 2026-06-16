@@ -10,6 +10,7 @@
     {"name": "feed_nm", "type": "string"},
     {"name": "title", "type": "string"},
     {"name": "summary", "type": "string", "default": ""},
-    {"name": "link", "type": "string", "default": ""}
+    {"name": "link", "type": "string", "default": ""},
+    {"name": "image_url", "type": "string", "default": ""}
   ]
 }

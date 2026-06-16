@@ -6,5 +6,6 @@ CREATE TABLE IF NOT EXISTS ods.rss_news (
     feed_nm        text,
     title          text,
     summary        text,
-    link           text
+    link           text,
+    image_url      text
 );

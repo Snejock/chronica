@@ -2,8 +2,13 @@ import feedparser
 import ftfy
 from bs4 import BeautifulSoup
 
+from .ImageExtractor import ImageExtractor
+
 
 class RSSFeedParser:
+    def __init__(self):
+        self._image = ImageExtractor()
+
     def parse(self, text: str) -> list[dict]:
         feed = feedparser.parse(text)
 
@@ -15,6 +20,7 @@ class RSSFeedParser:
                     "title": self._clean(getattr(entry, "title", "")),
                     "summary": self._clean(getattr(entry, "summary", "")),
                     "link": getattr(entry, "link", "").removeprefix("https://").removeprefix("http://").removeprefix("www."),
+                    "image_url": self._image.extract(entry),
                 }
             )
         return item_list
