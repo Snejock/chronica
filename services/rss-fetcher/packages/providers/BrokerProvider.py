@@ -5,7 +5,7 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
 
-from common.utils.get_schema import get_schema
+from utils.get_schema import get_schema
 
 logger = logging.getLogger(__name__)
 
