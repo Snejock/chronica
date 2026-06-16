@@ -27,12 +27,12 @@ output:
     dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
     query: |
       INSERT INTO ods.rss_news (
-        _source_system, published_dttm, feed_id, feed_nm, title, summary, link
-      ) VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7);
+        _source_system, published_dttm, feed_id, feed_nm, title, summary, link, image_url
+      ) VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7, $8);
     args_mapping: |
       let pub = this.published_utc.number().or(0)
       let pub_seconds = if $pub > 5000000000 { $pub / 1000 } else { $pub }
-      
+
       root = [
         this.source_system.string().or(""),
         $pub_seconds,
@@ -40,7 +40,8 @@ output:
         this.feed_nm.string().or(""),
         this.title.string().or(""),
         this.summary.string().or(""),
-        this.link.string().or("")
+        this.link.string().or(""),
+        this.image_url.string().or("")
       ]
     batching:
       count: 100
