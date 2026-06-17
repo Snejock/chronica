@@ -6,7 +6,7 @@ class ImageExtractor:
     RESIZE_PARAMS = {"width", "height", "w", "h", "resize", "crop", "size", "maxwidth", "maxheight"}
     SIGNATURE_PARAMS = {"sig", "signature", "s", "token", "hmac", "hash", "policy",
                         "x-amz-signature", "x-goog-signature"}
-    JUNK_MARKERS = ("doubleclick", "feedburner", "/1x1", "pixel")
+    JUNK_MARKERS = ("doubleclick", "feedburner", "/1x1", "pixel", "i.guim.co.uk")
 
     def extract(self, entry) -> str | None:
         base = getattr(entry, "link", "")
