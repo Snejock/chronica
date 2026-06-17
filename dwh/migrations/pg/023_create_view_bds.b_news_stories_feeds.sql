@@ -12,7 +12,9 @@ SELECT
     , f.city_nm
     , f.language_code
     , n.distance_prt
+    , m.image_url
 FROM dds.t_news_stories n
 JOIN dds.h_news h ON n.news_id = h.news_id
 JOIN dds.d_rss_feeds f ON h.feed_id = f.feed_id
+LEFT JOIN dds.s_news_media m ON m.news_id = n.news_id
 ;

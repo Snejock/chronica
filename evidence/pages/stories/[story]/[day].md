@@ -52,6 +52,7 @@ hide_breadcrumbs: true
   let expanded   = {};
   let hovered    = {};
   let fullHeight = {};
+  let imgError   = {};
 
   function clampDetect(node, uid) {
     const measure = () => {
@@ -114,6 +115,7 @@ SELECT
     , city_nm
     , title_txt
     , summary_txt
+    , image_url
 FROM dwh_pg_1.b_news_stories_feeds
 WHERE story_id = ${params.story}
   AND CAST(published_dttm AS DATE) = '${params.day}'::date
@@ -217,36 +219,73 @@ ORDER BY published_dttm DESC
             <div class="absolute pointer-events-none" style="top:20px; left:-20px; width:20px; height:1px; background:#c4bca9; opacity:{hovered[item.uid] ? 1 : 0}; transition:opacity 0.2s ease"></div>
 
             <!-- Карточка -->
-            <div class="rounded-xl px-4 py-3 border transition-colors" style="background:#faf9f7; border-color:{hovered[item.uid] || expanded[item.uid] ? '#d6d3d1' : 'transparent'}">
+            <div class="rounded-xl px-4 py-3 border overflow-hidden transition-colors" style="background:#faf9f7; border-color:{hovered[item.uid] || expanded[item.uid] ? '#d6d3d1' : 'transparent'}">
 
-              <!-- Мета-строка (без времени — оно на timeline) -->
-              <p class="text-xs mb-1 flex items-center gap-1 flex-wrap" style="color:#a8a29e">
-                {#if item.country_code}{flag(item.country_code) || item.country_code}&nbsp;{/if}{item.feed_nm}
-                {#if item.city_nm}&nbsp;·&nbsp;{item.city_nm}{/if}
-              </p>
-
-              <!-- Заголовок-ссылка -->
-              {#if item.title_txt}
-                <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                   on:click|stopPropagation
-                   class="text-sm font-medium leading-snug hover:text-stone-500 block mb-1"
-                   style="color:#15140F">{item.title_txt}</a>
+              {#if item.image_url && !imgError[item.uid]}
+                <!-- Картинка без отступов + мета + заголовок поверх -->
+                <div class="-mx-4 -mt-3 mb-3 relative">
+                  <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
+                     on:click|stopPropagation class="block" style="aspect-ratio:16/9; background:#f5f4f2">
+                    <img src={absUrl(item.image_url)} alt="" loading="lazy"
+                         on:error={() => { imgError[item.uid] = true; imgError = imgError; }}
+                         on:load={(e) => { if (e.target.naturalWidth < 300) { imgError[item.uid] = true; imgError = imgError; } }}
+                         class="w-full h-full object-cover" />
+                  </a>
+                  <!-- Мета сверху -->
+                  <div class="absolute top-0 left-0 right-0 px-4 py-2"
+                       style="background:linear-gradient(to bottom, rgba(0,0,0,0.5), transparent)">
+                    <p class="text-xs flex items-center gap-1 flex-wrap" style="color:rgba(255,255,255,0.88)">
+                      {#if item.country_code}{flag(item.country_code) || item.country_code}&nbsp;{/if}{item.feed_nm}
+                      {#if item.city_nm}&nbsp;·&nbsp;{item.city_nm}{/if}
+                      {#if item.news_link}&nbsp;·&nbsp;<span>{domain(item.news_link)}</span>
+                        <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
+                           on:click|stopPropagation
+                           class="inline-flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
+                           style="color:rgba(255,255,255,0.88)"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7"/><polyline points="8 1 11 1 11 4"/><line x1="5" y1="7" x2="11" y2="1"/></svg></a>
+                      {/if}
+                    </p>
+                  </div>
+                  <!-- Заголовок снизу картинки -->
+                  <div class="absolute bottom-0 left-0 right-0 px-4 pt-6 pb-3"
+                       style="background:linear-gradient(to top, rgba(0,0,0,0.65), transparent)">
+                    {#if item.title_txt}
+                      <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
+                         on:click|stopPropagation
+                         class="text-sm font-semibold leading-snug block"
+                         style="color:#ffffff">{item.title_txt}</a>
+                    {:else}
+                      <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
+                         on:click|stopPropagation
+                         class="text-xs block"
+                         style="color:rgba(255,255,255,0.7)">Открыть источник →</a>
+                    {/if}
+                  </div>
+                </div>
               {:else}
-                <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                   on:click|stopPropagation
-                   class="text-xs hover:text-stone-500 block mb-1"
-                   style="color:#a8a29e">Открыть источник →</a>
-              {/if}
+                <!-- Мета-строка для карточек без картинки -->
+                <p class="text-xs mb-1 flex items-center gap-1 flex-wrap" style="color:#a8a29e">
+                  {#if item.country_code}{flag(item.country_code) || item.country_code}&nbsp;{/if}{item.feed_nm}
+                  {#if item.city_nm}&nbsp;·&nbsp;{item.city_nm}{/if}
+                  {#if item.news_link}&nbsp;·&nbsp;<span>{domain(item.news_link)}</span>
+                    <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
+                       on:click|stopPropagation
+                       class="inline-flex items-center opacity-0 group-hover:opacity-100 transition-opacity hover:text-stone-500"
+                       style="color:#a8a29e"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7"/><polyline points="8 1 11 1 11 4"/><line x1="5" y1="7" x2="11" y2="1"/></svg></a>
+                  {/if}
+                </p>
 
-              <!-- Бейдж домена с иконкой-ссылкой -->
-              {#if item.news_link}
-                <div class="flex items-center gap-1 mb-2">
-                  <span class="text-xs" style="color:#c4bca9">{domain(item.news_link)}</span>
+                <!-- Заголовок-ссылка для карточек без картинки -->
+                {#if item.title_txt}
                   <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
                      on:click|stopPropagation
-                     class="inline-flex items-center opacity-0 group-hover:opacity-100 transition-opacity hover:text-stone-500"
-                     style="color:#c4bca9"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7"/><polyline points="8 1 11 1 11 4"/><line x1="5" y1="7" x2="11" y2="1"/></svg></a>
-                </div>
+                     class="text-sm font-medium leading-snug hover:text-stone-500 block mb-1"
+                     style="color:#15140F">{item.title_txt}</a>
+                {:else}
+                  <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
+                     on:click|stopPropagation
+                     class="text-xs hover:text-stone-500 block mb-1"
+                     style="color:#a8a29e">Открыть источник →</a>
+                {/if}
               {/if}
 
               <!-- Раскрытие текста по кнопке -->

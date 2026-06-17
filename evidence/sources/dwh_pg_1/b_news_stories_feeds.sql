@@ -7,6 +7,7 @@ SELECT
     , b.feed_type
     , b.country_code
     , b.city_nm
+    , b.image_url
     , s.title_txt
     , s.summary_txt
 FROM bds.b_news_stories_feeds b
