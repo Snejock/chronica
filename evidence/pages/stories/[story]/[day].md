@@ -53,6 +53,7 @@ hide_breadcrumbs: true
   let hovered    = {};
   let fullHeight = {};
   let imgError   = {};
+  let slidUid    = null;
 
   function clampDetect(node, uid) {
     const measure = () => {
@@ -103,6 +104,8 @@ hide_breadcrumbs: true
   .card-text {
     transition: max-height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   }
+  .expand-btn { -webkit-tap-highlight-color: transparent; }
+  .expand-btn:active { color: #a8a29e !important; }
 </style>
 
 ```sql q_news_feed
@@ -124,9 +127,8 @@ ORDER BY published_dttm DESC
 
 <div class="not-prose mt-6 mb-5 flex items-center gap-3">
 <a href="/stories/{params.story}"
-     class="inline-flex items-center px-2 py-1 rounded-full text-sm flex-shrink-0 transition-colors"
-     style="color:#78716c; border:1px solid transparent; background:#fafaf9;"
-     onmouseover="this.style.borderColor='#d6d3d1'" onmouseout="this.style.borderColor='transparent'">←</a>
+     class="inline-flex items-center px-2 py-1 rounded-full text-sm flex-shrink-0"
+     style="color:#78716c; border:1px solid #e7e5e4; background:#fafaf9;">←</a>
 <h2 class="text-xl font-semibold m-0" style="color:#15140F">Источники за {ruDate}</h2>
 </div>
 
@@ -144,17 +146,12 @@ ORDER BY published_dttm DESC
   <button type="button"
     class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer"
     data-act={activeCountry === null}
-    style={activeCountry === null ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:transparent; background:#fafaf9;'}
-    onmouseover="if(this.dataset.act!=='true') this.style.borderColor='#d6d3d1'"
-    onmouseout="if(this.dataset.act!=='true') this.style.borderColor='transparent'"
+    style={activeCountry === null ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:#e7e5e4; background:#fafaf9;'}
     on:click={() => activeCountry = null}>Все страны</button>
   {#each countries as cc}
     <button type="button"
-      class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer"
-      data-act={activeCountry === cc}
-      style={activeCountry === cc ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:transparent; background:#fafaf9;'}
-      onmouseover="if(this.dataset.act!=='true') this.style.borderColor='#d6d3d1'"
-      onmouseout="if(this.dataset.act!=='true') this.style.borderColor='transparent'"
+      class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border cursor-pointer"
+      style={activeCountry === cc ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:#e7e5e4; background:#fafaf9;'}
       on:click={() => activeCountry = activeCountry === cc ? null : cc}>{flag(cc) || cc}&nbsp;{cc}</button>
   {/each}
 </div>
@@ -166,17 +163,12 @@ ORDER BY published_dttm DESC
   <button type="button"
     class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer"
     data-act={activeFeed === null}
-    style={activeFeed === null ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:transparent; background:#fafaf9;'}
-    onmouseover="if(this.dataset.act!=='true') this.style.borderColor='#d6d3d1'"
-    onmouseout="if(this.dataset.act!=='true') this.style.borderColor='transparent'"
+    style={activeFeed === null ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:#e7e5e4; background:#fafaf9;'}
     on:click={() => activeFeed = null}>Все ленты</button>
   {#each feeds as feed}
     <button type="button"
-      class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer"
-      data-act={activeFeed === feed}
-      style={activeFeed === feed ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:transparent; background:#fafaf9;'}
-      onmouseover="if(this.dataset.act!=='true') this.style.borderColor='#d6d3d1'"
-      onmouseout="if(this.dataset.act!=='true') this.style.borderColor='transparent'"
+      class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border cursor-pointer"
+      style={activeFeed === feed ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:#e7e5e4; background:#fafaf9;'}
       on:click={() => activeFeed = activeFeed === feed ? null : feed}>{feed}</button>
   {/each}
 </div>
@@ -202,9 +194,8 @@ ORDER BY published_dttm DESC
       <div class="flex flex-col">
         {#each group.items as item}
           {@const _t = new Date(item.published_dttm).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}
-          <div class="group relative mb-3"
-               on:mouseenter={() => { hovered[item.uid] = true; hovered = hovered; }}
-               on:mouseleave={() => { hovered[item.uid] = false; hovered = hovered; }}>
+          <div class="relative mb-3"
+               on:click={() => { slidUid = slidUid === item.uid ? null : item.uid; }}>
 
             <!-- Время (слева от вертикальной линии) -->
             <div class="absolute text-right select-none pointer-events-none" style="top:14px; left:-60px; width:30px">
@@ -213,101 +204,96 @@ ORDER BY published_dttm DESC
             </div>
 
             <!-- Точка на вертикальной линии -->
-            <div class="absolute rounded-full pointer-events-none" style="top:16px; left:-28px; width:8px; height:8px; transition:background 0.2s ease, box-shadow 0.2s ease; background:{hovered[item.uid] ? '#c4bca9' : '#e7e5e4'}; box-shadow:{hovered[item.uid] ? '0 0 0 3px rgba(196,188,169,0.2)' : 'none'}"></div>
+            <div class="absolute rounded-full pointer-events-none" style="top:16px; left:-28px; width:8px; height:8px; background:#e7e5e4"></div>
 
             <!-- Соединительная линия -->
-            <div class="absolute pointer-events-none" style="top:20px; left:-20px; width:20px; height:1px; background:#c4bca9; opacity:{hovered[item.uid] ? 1 : 0}; transition:opacity 0.2s ease"></div>
+            <div class="absolute pointer-events-none" style="top:20px; left:-20px; width:20px; height:1px; background:#e7e5e4"></div>
 
-            <!-- Карточка -->
-            <div class="rounded-xl px-4 py-3 border overflow-hidden transition-colors" style="background:#faf9f7; border-color:{hovered[item.uid] || expanded[item.uid] ? '#d6d3d1' : 'transparent'}">
+            <!-- Карточка (бордер фиксирован, содержимое скользит внутри) -->
+            <div class="rounded-xl border overflow-hidden relative transition-colors"
+                 style="background:#faf9f7; border-color:#e7e5e4">
 
-              {#if item.image_url && !imgError[item.uid]}
-                <!-- Картинка без отступов + мета + заголовок поверх -->
-                <div class="-mx-4 -mt-3 mb-3 relative">
-                  <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                     on:click|stopPropagation class="block" style="aspect-ratio:16/9; background:#f5f4f2">
-                    <img src={absUrl(item.image_url)} alt="" loading="lazy"
-                         on:error={() => { imgError[item.uid] = true; imgError = imgError; }}
-                         on:load={(e) => { if (e.target.naturalWidth < 300) { imgError[item.uid] = true; imgError = imgError; } }}
-                         class="w-full h-full object-cover" />
-                  </a>
-                  <!-- Мета сверху -->
-                  <div class="absolute top-0 left-0 right-0 px-4 py-2"
-                       style="background:linear-gradient(to bottom, rgba(0,0,0,0.5), transparent)">
-                    <p class="text-xs flex items-center gap-1 flex-wrap" style="color:rgba(255,255,255,0.88)">
-                      {#if item.country_code}{flag(item.country_code) || item.country_code}&nbsp;{/if}{item.feed_nm}
-                      {#if item.city_nm}&nbsp;·&nbsp;{item.city_nm}{/if}
-                      {#if item.news_link}&nbsp;·&nbsp;<span>{domain(item.news_link)}</span>
-                        <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                           on:click|stopPropagation
-                           class="inline-flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
-                           style="color:rgba(255,255,255,0.88)"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7"/><polyline points="8 1 11 1 11 4"/><line x1="5" y1="7" x2="11" y2="1"/></svg></a>
-                      {/if}
-                    </p>
-                  </div>
-                  <!-- Заголовок снизу картинки -->
-                  <div class="absolute bottom-0 left-0 right-0 px-4 pt-6 pb-3"
-                       style="background:linear-gradient(to top, rgba(0,0,0,0.65), transparent)">
+              <!-- Скользящее содержимое -->
+              <div class="px-4 py-3"
+                   style="transform:translateX({slidUid === item.uid ? '-56px' : '0'}); transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)">
+
+                {#if item.image_url && !imgError[item.uid]}
+                  <!-- Картинка без отступов + мета + заголовок поверх -->
+                  <div class="-mx-4 -mt-3 mb-3 relative">
+                    <div style="aspect-ratio:16/9; background:#f5f4f2">
+                      <img src={absUrl(item.image_url)} alt="" loading="lazy"
+                           on:error={() => { imgError[item.uid] = true; imgError = imgError; }}
+                           on:load={(e) => { if (e.target.naturalWidth < 300) { imgError[item.uid] = true; imgError = imgError; } }}
+                           class="w-full h-full object-cover" />
+                    </div>
+                    <!-- Мета сверху -->
+                    <div class="absolute top-0 left-0 right-0 px-4 py-2"
+                         style="background:linear-gradient(to bottom, rgba(0,0,0,0.5), transparent)">
+                      <p class="text-xs flex items-center gap-1 flex-wrap" style="color:rgba(255,255,255,0.88)">
+                        {#if item.country_code}{flag(item.country_code) || item.country_code}&nbsp;{/if}{item.feed_nm}
+                        {#if item.city_nm}&nbsp;·&nbsp;{item.city_nm}{/if}
+                        {#if item.news_link}&nbsp;·&nbsp;<span>{domain(item.news_link)}</span>{/if}
+                      </p>
+                    </div>
+                    <!-- Заголовок снизу картинки -->
                     {#if item.title_txt}
-                      <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                         on:click|stopPropagation
-                         class="text-sm font-semibold leading-snug block"
-                         style="color:#ffffff">{item.title_txt}</a>
-                    {:else}
-                      <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                         on:click|stopPropagation
-                         class="text-xs block"
-                         style="color:rgba(255,255,255,0.7)">Открыть источник →</a>
+                      <div class="absolute bottom-0 left-0 right-0 px-4 pt-6 pb-3"
+                           style="background:linear-gradient(to top, rgba(0,0,0,0.65), transparent)">
+                        <p class="text-sm font-semibold leading-snug" style="color:#ffffff">{item.title_txt}</p>
+                      </div>
                     {/if}
                   </div>
-                </div>
-              {:else}
-                <!-- Мета-строка для карточек без картинки -->
-                <p class="text-xs mb-1 flex items-center gap-1 flex-wrap" style="color:#a8a29e">
-                  {#if item.country_code}{flag(item.country_code) || item.country_code}&nbsp;{/if}{item.feed_nm}
-                  {#if item.city_nm}&nbsp;·&nbsp;{item.city_nm}{/if}
-                  {#if item.news_link}&nbsp;·&nbsp;<span>{domain(item.news_link)}</span>
-                    <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                       on:click|stopPropagation
-                       class="inline-flex items-center opacity-0 group-hover:opacity-100 transition-opacity hover:text-stone-500"
-                       style="color:#a8a29e"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7"/><polyline points="8 1 11 1 11 4"/><line x1="5" y1="7" x2="11" y2="1"/></svg></a>
-                  {/if}
-                </p>
-
-                <!-- Заголовок-ссылка для карточек без картинки -->
-                {#if item.title_txt}
-                  <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                     on:click|stopPropagation
-                     class="text-sm font-medium leading-snug hover:text-stone-500 block mb-1"
-                     style="color:#15140F">{item.title_txt}</a>
                 {:else}
-                  <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                     on:click|stopPropagation
-                     class="text-xs hover:text-stone-500 block mb-1"
-                     style="color:#a8a29e">Открыть источник →</a>
-                {/if}
-              {/if}
+                  <!-- Мета-строка для карточек без картинки -->
+                  <p class="text-xs mb-1 flex items-center gap-1 flex-wrap" style="color:#a8a29e">
+                    {#if item.country_code}{flag(item.country_code) || item.country_code}&nbsp;{/if}{item.feed_nm}
+                    {#if item.city_nm}&nbsp;·&nbsp;{item.city_nm}{/if}
+                    {#if item.news_link}&nbsp;·&nbsp;<span>{domain(item.news_link)}</span>{/if}
+                  </p>
 
-              <!-- Раскрытие текста по кнопке -->
-              {#if item.summary_txt}
-                <p use:clampDetect={item.uid}
-                   class="card-text text-sm leading-relaxed overflow-hidden mb-1"
-                   style="color:#57534e; max-height:{expanded[item.uid] ? (fullHeight[item.uid] ? fullHeight[item.uid] + 'px' : '600px') : truncated[item.uid] === false ? 'none' : '4.9em'}; display:-webkit-box; -webkit-box-orient:vertical; line-clamp:{expanded[item.uid] ? 'none' : 3}; -webkit-line-clamp:{expanded[item.uid] ? 'none' : 3};"
-                   >{item.summary_txt}</p>
-                {#if truncated[item.uid]}
-                  <button type="button"
-                    class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none transition-colors"
-                    style="color:#a8a29e; background:none; border:none; padding:0"
-                    onmouseover="this.style.color='#78716c'" onmouseout="this.style.color='#a8a29e'"
-                    on:click|preventDefault|stopPropagation={() => { expanded[item.uid] = !expanded[item.uid]; expanded = expanded; }}>
-                    {expanded[item.uid] ? 'Скрыть' : 'Показать полностью'}
-                    <span style="display:inline-flex; transform:rotate({expanded[item.uid] ? '180deg' : '0deg'}); transition:transform 0.2s">
-                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-                        <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                    </span>
-                  </button>
+                  <!-- Заголовок для карточек без картинки -->
+                  {#if item.title_txt}
+                    <p class="text-sm font-medium leading-snug mb-1" style="color:#15140F">{item.title_txt}</p>
+                  {/if}
                 {/if}
+
+                <!-- Раскрытие текста по кнопке -->
+                {#if item.summary_txt}
+                  <p use:clampDetect={item.uid}
+                     class="card-text text-sm leading-relaxed overflow-hidden mb-1"
+                     style="color:#57534e; max-height:{expanded[item.uid] ? (fullHeight[item.uid] ? fullHeight[item.uid] + 'px' : '600px') : truncated[item.uid] === false ? 'none' : '4.9em'}; display:-webkit-box; -webkit-box-orient:vertical; line-clamp:{expanded[item.uid] ? 'none' : 3}; -webkit-line-clamp:{expanded[item.uid] ? 'none' : 3};"
+                     >{item.summary_txt}</p>
+                  {#if truncated[item.uid]}
+                    <button type="button"
+                      class="expand-btn inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none transition-colors"
+                      style="color:#a8a29e; background:none; border:none; padding:0"
+                      on:click|preventDefault|stopPropagation={() => { expanded[item.uid] = !expanded[item.uid]; expanded = expanded; }}>
+                      {expanded[item.uid] ? 'Скрыть' : 'Показать полностью'}
+                      <span style="display:inline-flex; transform:rotate({expanded[item.uid] ? '180deg' : '0deg'}); transition:transform 0.2s">
+                        <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                          <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </span>
+                    </button>
+                  {/if}
+                {/if}
+
+              </div>
+
+              <!-- Иконка — скользит из-за правого края внутри карточки -->
+              {#if item.news_link}
+                <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
+                   on:click|stopPropagation
+                   class="absolute top-0 bottom-0 right-0 flex items-center justify-center"
+                   style="width:56px; transform:translateX({slidUid === item.uid ? '0' : '100%'}); transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)">
+                  <div class="rounded-full flex items-center justify-center"
+                       style="width:36px; height:36px; border:1px solid #e7e5e4; background:#fafaf9">
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="#78716c">
+                      <path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd"/>
+                      <path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd"/>
+                    </svg>
+                  </div>
+                </a>
               {/if}
 
             </div>

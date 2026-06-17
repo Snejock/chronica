@@ -4,6 +4,11 @@ full_width: false
 ---
 
 <script>
+  function absUrl(url) {
+    if (!url) return url;
+    return /^https?:\/\//i.test(url) ? url : 'https://' + url;
+  }
+
   function relTime(dttm) {
     if (!dttm) return '';
     const diff = Date.now() - new Date(dttm).getTime();
@@ -106,7 +111,8 @@ full_width: false
     const activity = q_activity.filter(r => +r.story_id === s.story_id);
     const forecast = q_top_forecast.find(r => +r.story_id === s.story_id) || null;
     const total30  = activity.reduce((sum, r) => sum + +r.cnt, 0);
-    return { ...s, headline, upd, activity, forecast, total30 };
+    const images   = q_story_images.filter(r => +r.story_id === s.story_id).map(r => r.image_url);
+    return { ...s, headline, upd, activity, forecast, total30, images };
   }).sort((a, b) => {
     const ta = a.upd ? new Date(a.upd.last_dttm).getTime() : 0;
     const tb = b.upd ? new Date(b.upd.last_dttm).getTime() : 0;
@@ -201,11 +207,10 @@ full_width: false
     transition: max-height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .story-card {
-    border-color: transparent;
+    border-color: #e7e5e4;
   }
-  .story-card:hover,
   .story-card.story-card-selected {
-    border-color: #d6d3d1;
+    border-color: #57534e;
   }
 </style>
 
@@ -236,6 +241,20 @@ GROUP BY 1, 2
 ORDER BY 1, 2
 ```
 
+```sql q_story_images
+SELECT story_id, image_url
+FROM (
+    SELECT
+        story_id,
+        image_url,
+        ROW_NUMBER() OVER (PARTITION BY story_id ORDER BY published_dttm DESC) AS rn
+    FROM dwh_pg_1.b_news_stories_feeds
+    WHERE image_url IS NOT NULL AND image_url != ''
+) t
+WHERE rn <= 5
+ORDER BY story_id, rn
+```
+
 ```sql q_top_forecast
 WITH latest AS (
     SELECT forecast_id, MAX(published_dttm) AS dttm
@@ -251,7 +270,7 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
 ```
 
 {#each enriched as story}
-{@const total = 1}
+{@const total = story.images.length}
 {@const slide = activeSlide[story.story_id] || 0}
 <a href="/stories/{story.story_id}"
    class="story-card not-prose block rounded-xl mb-4 border transition-colors overflow-hidden"
@@ -267,8 +286,9 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
     <p class="text-base font-semibold leading-snug" style="color:#15140F">{story.story_nm}</p>
   </div>
 
-  <!-- Карусель: карта региона + фотографии -->
-  <div class="relative" style="height:140px; background:#f0ede8; overflow:hidden">
+  <!-- Карусель: последние фотографии -->
+  {#if total > 0}
+  <div class="relative" style="height:160px; background:#f0ede8; overflow:hidden">
 
     <!-- Скролл-контейнер (scroll-snap + drag мышью) -->
     <div class="carousel-scroll flex h-full"
@@ -280,13 +300,11 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
          on:pointerup={(e) => onPointerUp(e, story.story_id)}
          on:pointerleave={(e) => onPointerUp(e, story.story_id)}>
 
-      <!-- Слайд 0: миникарта (Leaflet) -->
-      <div class="flex-shrink-0 h-full" style="width:100%; scroll-snap-align:start">
-        <div
-          use:leafletMap={{ lat: +story.geo_lat, lon: +story.geo_lon, zoom: 5 }}
-          style="height:100%; width:100%">
+      {#each story.images as imgUrl}
+        <div class="story-slide flex-shrink-0 h-full" style="width:100%; scroll-snap-align:start">
+          <img src={absUrl(imgUrl)} alt="" loading="lazy" class="w-full h-full object-cover" />
         </div>
-      </div>
+      {/each}
     </div>
 
     {#if total > 1}
@@ -327,6 +345,7 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
       </div>
     {/if}
   </div>
+  {/if}
 
   <!-- Контент карточки -->
   <div class="px-5 py-4">
@@ -341,7 +360,6 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
           <button type="button"
             class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none transition-colors"
             style="color:#a8a29e; background:none; border:none; padding:0"
-            onmouseover="this.style.color='#57534e'" onmouseout="this.style.color='#a8a29e'"
             on:click|preventDefault|stopPropagation={() => { expanded[story.story_id] = !expanded[story.story_id]; expanded = expanded; }}>
             {expanded[story.story_id] ? 'Скрыть' : 'Показать полностью'}
             <span style="display:inline-flex; transform:rotate({expanded[story.story_id] ? '180deg' : '0deg'}); transition:transform 0.2s">
