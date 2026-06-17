@@ -4,6 +4,8 @@ from urllib.parse import urljoin, urlsplit, urlunsplit, parse_qsl, urlencode
 class ImageExtractor:
     IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "gif", "avif"}
     RESIZE_PARAMS = {"width", "height", "w", "h", "resize", "crop", "size", "maxwidth", "maxheight"}
+    SIGNATURE_PARAMS = {"sig", "signature", "s", "token", "hmac", "hash", "policy",
+                        "x-amz-signature", "x-goog-signature"}
     JUNK_MARKERS = ("doubleclick", "feedburner", "/1x1", "pixel")
 
     def extract(self, entry) -> str | None:
@@ -62,8 +64,13 @@ class ImageExtractor:
         url = urljoin(base, url)
         parts = urlsplit(url)
         path_ext = parts.path.lower().rsplit(".", 1)[-1]
-        # снятие resize-параметра только если путь сам заканчивается на расширение картинки
+        # снятие resize-параметров только если:
+        # 1. путь кончается на расширение картинки, и
+        # 2. в query нет подписи — иначе обрезанный URL станет невалидным (401)
         if path_ext in self.IMAGE_EXTS and parts.query:
-            kept = [(k, v) for k, v in parse_qsl(parts.query) if k.lower() not in self.RESIZE_PARAMS]
-            url = urlunsplit(parts._replace(query=urlencode(kept)))
+            params = parse_qsl(parts.query)
+            has_signature = any(k.lower() in self.SIGNATURE_PARAMS for k, _ in params)
+            if not has_signature:
+                kept = [(k, v) for k, v in params if k.lower() not in self.RESIZE_PARAMS]
+                url = urlunsplit(parts._replace(query=urlencode(kept)))
         return url
