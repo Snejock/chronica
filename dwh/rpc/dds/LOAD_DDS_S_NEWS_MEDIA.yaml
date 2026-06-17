@@ -1,0 +1,64 @@
+input:
+  redpanda:
+    seed_brokers: ["dwh-rp-1:9092"]
+    topics: ["rss_news"]
+    consumer_group: "LOAD_DDS_S_NEWS_MEDIA"
+
+pipeline:
+  processors:
+    - label: decode
+      schema_registry_decode:
+        url: "http://dwh-rp-1:8081"
+    - catch:
+        - log:
+            level: ERROR
+            message: "❌ AVRO DECODE FAILED: ${! error() }"
+        - mapping: 'root = deleted()'
+
+    # пропуск сообщения без картинки
+    - mapping: |
+        root = if this.image_url == null || this.image_url == "" { deleted() } else { this }
+
+    # выполнение проверки, была ли новость обработана ранее
+    - branch:
+        processors:
+          - try:
+              - label: redis_check_media
+                cache:
+                  resource: redis_cache
+                  operator: exists
+                  key: "processed:dds.s_news_media:${! this.link.string() }"
+        result_map: 'meta is_processed = content().string().catch("false")'
+
+    - mapping: |
+        root = if meta("is_processed") == "true" { deleted() } else { this }
+
+output:
+  label: out_dds_s_news_media
+  broker:
+    pattern: fan_out
+    outputs:
+      - label: out_postgres
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_news_media (
+              news_id, image_url
+            ) VALUES (
+              xxh64($1),
+              $2
+            ) ON CONFLICT (news_id) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.link.string().or(""),
+              this.image_url.string().or("")
+            ]
+          batching:
+            count: 100
+            period: 1s
+
+      - label: out_redis
+        cache:
+          target: redis_cache
+          key: "processed:dds.s_news_media:${! this.link.string() }"
