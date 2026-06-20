@@ -1,6 +1,7 @@
 ---
 title: Сюжеты
 full_width: false
+hide_breadcrumbs: true
 ---
 
 <script>
@@ -79,31 +80,6 @@ full_width: false
     if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return `${n} ${few}`;
     return `${n} ${many}`;
   }
-
-  // Усечение блока с последними событиями до 2 строк + кнопка "Показать полностью"/"Скрыть"
-  let truncated  = {};
-  let expanded   = {};
-  let fullHeight = {};
-
-  function clampDetect(node, uid) {
-    const measure = () => {
-      const lh = parseFloat(getComputedStyle(node).lineHeight) || 20;
-      fullHeight[uid] = node.scrollHeight;
-      const isTrunc = node.scrollHeight > lh * 2 + 4;
-      if (truncated[uid] !== isTrunc) {
-        truncated[uid] = isTrunc;
-        truncated = truncated;
-      }
-    };
-    requestAnimationFrame(measure);
-    const ro = new ResizeObserver(measure);
-    ro.observe(node);
-    return { destroy() { ro.disconnect(); } };
-  }
-
-  // Карточка ленты: первый клик подсвечивает рамкой (как выбор у карточек
-  // прогноза на странице сюжета), второй клик переходит на страницу сюжета.
-  let selectedCard = null;
 
   $: enriched = q_stories.map(s => {
     const headline = q_latest_headlines.find(r => +r.story_id === s.story_id) || null;
@@ -209,9 +185,6 @@ full_width: false
   .story-card {
     border-color: #e7e5e4;
   }
-  .story-card.story-card-selected {
-    border-color: #57534e;
-  }
 </style>
 
 ```sql q_stories
@@ -269,26 +242,19 @@ WHERE b.language_code = 'ru'
 QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DESC) = 1
 ```
 
-{#each enriched as story}
+{#each enriched as story, storyIdx}
 {@const total = story.images.length}
 {@const slide = activeSlide[story.story_id] || 0}
 <a href="/stories/{story.story_id}"
    class="story-card not-prose block rounded-xl mb-4 border transition-colors overflow-hidden"
-   class:story-card-selected={selectedCard === story.story_id}
    style="background:#faf9f7"
    on:click={(e) => {
-     if (drag[story.story_id]?.moved) { e.preventDefault(); drag[story.story_id] = {...drag[story.story_id], moved: false}; return; }
-     if (selectedCard !== story.story_id) { e.preventDefault(); selectedCard = story.story_id; }
+     if (drag[story.story_id]?.moved) { e.preventDefault(); drag[story.story_id] = {...drag[story.story_id], moved: false}; }
    }}>
 
-  <!-- Заголовок -->
-  <div class="px-5 pt-4 pb-3">
-    <p class="text-base font-semibold leading-snug" style="color:#15140F">{story.story_nm}</p>
-  </div>
-
-  <!-- Карусель: последние фотографии -->
+  <!-- Карусель: последние фотографии (первая, до верха карточки) -->
   {#if total > 0}
-  <div class="relative" style="height:160px; background:#f0ede8; overflow:hidden">
+  <div class="relative" style="height:180px; background:#f0ede8; overflow:hidden">
 
     <!-- Скролл-контейнер (scroll-snap + drag мышью) -->
     <div class="carousel-scroll flex h-full"
@@ -308,30 +274,6 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
     </div>
 
     {#if total > 1}
-      <!-- Стрелка влево -->
-      <div class="absolute left-0 top-0 bottom-0 flex items-center justify-center select-none cursor-pointer"
-           style="width:36px; z-index:500"
-           role="button" tabindex="0"
-           on:click|preventDefault|stopPropagation={() => goToSlide(story.story_id, (slide - 1 + total) % total)}
-           on:keydown={(e) => onKeyActivate(e, () => goToSlide(story.story_id, (slide - 1 + total) % total))}
-           aria-label="Предыдущий слайд">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#57534e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 2L4 7L9 12"/>
-        </svg>
-      </div>
-
-      <!-- Стрелка вправо -->
-      <div class="absolute right-0 top-0 bottom-0 flex items-center justify-center select-none cursor-pointer"
-           style="width:36px; z-index:500"
-           role="button" tabindex="0"
-           on:click|preventDefault|stopPropagation={() => goToSlide(story.story_id, (slide + 1) % total)}
-           on:keydown={(e) => onKeyActivate(e, () => goToSlide(story.story_id, (slide + 1) % total))}
-           aria-label="Следующий слайд">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#57534e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5 2L10 7L5 12"/>
-        </svg>
-      </div>
-
       <!-- Точки-индикаторы -->
       <div class="absolute bottom-2.5 inset-x-0 flex items-center justify-center gap-1.5" style="z-index:1000">
         {#each Array(total) as _, i}
@@ -347,29 +289,11 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
   </div>
   {/if}
 
-  <!-- Контент карточки -->
-  <div class="px-5 py-4">
+  <!-- Контент карточки: название → хедлайн → статистика -->
+  <div class="px-4 pt-3 pb-3">
+    <p class="text-base font-semibold leading-snug mb-2" style="color:#15140F">{story.story_nm}</p>
     {#if story.headline}
-      <p class="text-sm font-medium leading-snug mb-2" style="color:#15140F">{story.headline.headline_txt}</p>
-      {#if story.headline.summary_txt}
-        <p use:clampDetect={story.story_id}
-           class="card-text text-sm leading-relaxed overflow-hidden mb-1"
-           style="color:#57534e; max-height:{expanded[story.story_id] ? (fullHeight[story.story_id] ? fullHeight[story.story_id] + 'px' : '600px') : truncated[story.story_id] === false ? 'none' : '3.3em'}; display:-webkit-box; -webkit-box-orient:vertical; line-clamp:{expanded[story.story_id] ? 'none' : 2}; -webkit-line-clamp:{expanded[story.story_id] ? 'none' : 2};"
-           >{story.headline.summary_txt}</p>
-        {#if truncated[story.story_id]}
-          <button type="button"
-            class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none transition-colors"
-            style="color:#a8a29e; background:none; border:none; padding:0"
-            on:click|preventDefault|stopPropagation={() => { expanded[story.story_id] = !expanded[story.story_id]; expanded = expanded; }}>
-            {expanded[story.story_id] ? 'Скрыть' : 'Показать полностью'}
-            <span style="display:inline-flex; transform:rotate({expanded[story.story_id] ? '180deg' : '0deg'}); transition:transform 0.2s">
-              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-                <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </span>
-          </button>
-        {/if}
-      {/if}
+      <p class="text-sm leading-snug mb-0" style="color:#57534e">{story.headline.headline_txt}</p>
     {/if}
 
     <div class="flex items-center gap-3 mt-3 pt-3 flex-wrap" style="border-top:1px solid #f0ede9">

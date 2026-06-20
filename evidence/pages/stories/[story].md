@@ -1,8 +1,104 @@
 ---
+full_width: false
 hide_breadcrumbs: true
 ---
 
 <script>
+  import { getContext as _getCtx } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { slide } from 'svelte/transition';
+  const breadcrumb = _getCtx('breadcrumb');
+  $: if (q_story?.[0]?.story_nm) breadcrumb?.set({ storyName: q_story[0].story_nm });
+
+  let pageEl;
+
+  onMount(() => {
+    requestAnimationFrame(updateGrayscale);
+
+    function rubberBand(x, max = 80) {
+      return max * (1 - 1 / (x * 0.55 / max + 1));
+    }
+
+    let hitY = null, applied = 0, edge = null;
+    let startX = null, startY = null, axis = null; // 'h' | 'v' | null
+    const isTop    = () => window.scrollY <= 1;
+    const isBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
+
+    function reset(animate) {
+      if (applied > 0 && pageEl) {
+        if (animate) {
+          pageEl.style.transition = 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)';
+          pageEl.style.transform  = '';
+          setTimeout(() => { if (pageEl) pageEl.style.transition = ''; }, 500);
+        } else {
+          pageEl.style.transform = '';
+        }
+      }
+      hitY = null; applied = 0; edge = null;
+      startX = null; startY = null; axis = null;
+    }
+
+    function onTouchStart(e) {
+      reset(false);
+      if (e.touches.length === 1) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      }
+    }
+
+    function onTouchMove(e) {
+      if (!pageEl || e.touches.length !== 1) return;
+      const tx = e.touches[0].clientX;
+      const ty = e.touches[0].clientY;
+
+      // Определяем ось жеста по первым 6px движения и фиксируем до touchend
+      if (axis === null && startX !== null) {
+        const dx = Math.abs(tx - startX);
+        const dy = Math.abs(ty - startY);
+        if (dx > 6 || dy > 6) axis = dx > dy ? 'h' : 'v';
+      }
+      // Горизонтальный свайп (карусель) — не трогаем страницу
+      if (axis === 'h') return;
+
+      if (isBottom()) {
+        if (edge !== 'bottom') { edge = 'bottom'; hitY = ty; }
+        const over = hitY - ty;
+        if (over > 0) {
+          applied = rubberBand(over);
+          pageEl.style.transform = `translateY(${-applied}px)`;
+          e.preventDefault();
+        } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+
+      } else if (isTop()) {
+        if (edge !== 'top') { edge = 'top'; hitY = ty; }
+        const over = ty - hitY;
+        if (over > 0) {
+          applied = rubberBand(over);
+          pageEl.style.transform = `translateY(${applied}px)`;
+          e.preventDefault();
+        } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+
+      } else {
+        if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+        hitY = null; edge = null;
+      }
+    }
+
+    function onTouchEnd() { reset(true); }
+
+    document.addEventListener('touchstart',  onTouchStart,  { passive: true });
+    document.addEventListener('touchmove',   onTouchMove,   { passive: false });
+    document.addEventListener('touchend',    onTouchEnd);
+    document.addEventListener('touchcancel', onTouchEnd);
+
+    return () => {
+      document.removeEventListener('touchstart',  onTouchStart);
+      document.removeEventListener('touchmove',   onTouchMove);
+      document.removeEventListener('touchend',    onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchEnd);
+    };
+  });
+
   const PAGE_SIZE = 3;
   let shown = PAGE_SIZE;
   let activityOpen = false;
@@ -20,18 +116,12 @@ hide_breadcrumbs: true
   let fullHeight = {};
 
   let imgError = {};
-  let slidIdx  = null;
-
   function absUrl(url) {
     if (!url) return url;
     return /^https?:\/\//i.test(url) ? url : 'https://' + url;
   }
 
   $: dayImages = Object.fromEntries((q_day_images || []).map(r => [r.day, r.image_url]));
-
-  // Хроника событий: первый клик по карточке подсвечивает рамку,
-  // второй — переходит на страницу источников за день.
-  let selectedChronicle = null;
 
   function clampDetect(node, uid) {
     const measure = () => {
@@ -224,7 +314,7 @@ hide_breadcrumbs: true
       if (!dragging) return;
       dragging = false;
       node.style.cursor = 'grab';
-      node.style.scrollSnapType = 'x proximity';
+      node.style.scrollSnapType = '';
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
       window.removeEventListener('pointercancel', onPointerUp, true);
@@ -292,6 +382,44 @@ hide_breadcrumbs: true
         node.removeEventListener('pointerup', onUp);
       }
     };
+  }
+
+  let chronicleEl;
+  let slideGrayscale = { 0: 0 };
+
+  function updateGrayscale() {
+    if (!chronicleEl) return;
+    const slideW = chronicleEl.clientWidth - 44;
+    const viewCenter = chronicleEl.scrollLeft + chronicleEl.clientWidth / 2;
+    const next = {};
+    visible.forEach((_, i) => {
+      const dist = Math.abs(i * slideW + slideW / 2 - viewCenter);
+      next[i] = Math.min(1, dist / (slideW * 0.6));
+    });
+    slideGrayscale = next;
+  }
+
+  let expandedScrollLeft = null;
+
+  function onChronicleScroll(e) {
+    const el = e.currentTarget;
+    updateGrayscale();
+    const hasExpanded = Object.values(expanded).some(Boolean);
+
+    if (hasExpanded) {
+      if (expandedScrollLeft === null) expandedScrollLeft = el.scrollLeft;
+      if (Math.abs(el.scrollLeft - expandedScrollLeft) > 48) {
+        expanded = {};
+        expandedScrollLeft = null;
+      }
+    } else {
+      expandedScrollLeft = null;
+    }
+
+    if (!hasMore) return;
+    if (el.scrollLeft + el.clientWidth >= el.scrollWidth - el.clientWidth) {
+      shown += PAGE_SIZE;
+    }
   }
 
   function formatDelta(d) {
@@ -381,16 +509,31 @@ hide_breadcrumbs: true
 </script>
 
 <style>
-  .forecast-carousel {
+  .forecast-carousel, .chronicle-carousel {
     cursor: grab;
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
-  .forecast-carousel::-webkit-scrollbar {
+  .forecast-carousel::-webkit-scrollbar,
+  .chronicle-carousel::-webkit-scrollbar {
     display: none;
+  }
+  .chronicle-carousel {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+  }
+  .chronicle-slide {
+    flex: 0 0 calc(100% - 44px);
+    flex-shrink: 0;
+    scroll-snap-align: start;
   }
   .card-text {
     transition: max-height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
 </style>
@@ -487,6 +630,8 @@ WHERE rn = 1
 ORDER BY day
 ```
 
+<div bind:this={pageEl}>
+
 {#if q_story[0]}
 # {q_story[0].story_nm}
 {/if}
@@ -494,65 +639,60 @@ ORDER BY day
 ## Хроника событий
 
 {#if q_stories_summaries.length > 0}
-<div class="not-prose mt-6 relative" style="padding-left:52px">
-  <!-- Вертикальная линия -->
-  <div class="absolute" style="top:0; bottom:20px; left:28px; width:1px; background:#e7e5e4"></div>
+<div class="not-prose mt-4" style="margin:0 -12px">
+  <div class="chronicle-carousel" use:dragScroll on:scroll={onChronicleScroll}
+       bind:this={chronicleEl}>
+    {#each visible as entry, i}
+      {@const _p = entry.iso_dt.split('-')}
+      {@const _day = parseInt(_p[2])}
+      {@const _year = parseInt(_p[0])}
+      {@const _mon = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'][parseInt(_p[1])-1]}
 
-  {#each visible as entry, i}
-    {@const _p = entry.iso_dt.split('-')}
-    {@const _day = parseInt(_p[2])}
-    {@const _mon = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][parseInt(_p[1])-1]}
+      <div class="chronicle-slide"
+           use:tappable
+           on:tap={() => goto(`/stories/${params.story}/${entry.iso_dt}`)}>
 
-    <div class="relative mb-3"
-         on:click={() => { slidIdx = slidIdx === i ? null : i; }}>
+        <!-- Дата -->
+        <div style="padding:10px 0 6px 12px">
+          <span style="font-size:12px; font-weight:500; color:#a8a29e">{_day} {_mon}{_year !== new Date().getFullYear() ? ' ' + _year : ''}</span>
+        </div>
 
-      <!-- Дата (слева от вертикальной линии) -->
-      <div class="absolute text-right select-none pointer-events-none" style="top:14px; left:-52px; width:22px">
-        <span class="block font-medium" style="font-size:15px; line-height:1.1; color:#57534e">{_day}</span>
-        <span class="block" style="font-size:11px; color:#c4bca9; margin-top:1px">{_mon}</span>
-      </div>
+        <!-- Карточка -->
+        <div class="rounded-xl border overflow-hidden"
+             style="background:#faf9f7; border-color:#e7e5e4; margin:0 12px 12px 12px">
+          <div class="px-4 py-3">
 
-      <!-- Точка на вертикальной линии -->
-      <div class="absolute rounded-full pointer-events-none" style="top:16px; left:-28px; width:8px; height:8px; background:#e7e5e4"></div>
-
-      <!-- Соединительная линия -->
-      <div class="absolute pointer-events-none" style="top:20px; left:-20px; width:20px; height:1px; background:#e7e5e4"></div>
-
-      <!-- Карточка (бордер фиксирован, содержимое скользит внутри) -->
-      <div class="rounded-xl border overflow-hidden relative transition-colors"
-           style="background:#faf9f7; border-color:#e7e5e4">
-
-        <!-- Скользящее содержимое -->
-        <div class="px-4 py-3"
-             style="transform:translateX({slidIdx === i ? '-56px' : '0'}); transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)">
-
-          {#if dayImages[entry.iso_dt] && !imgError[i]}
-            <!-- Картинка + заголовок поверх снизу -->
-            <div class="-mx-4 -mt-3 mb-3 relative">
-              <div style="aspect-ratio:16/9; background:#f5f4f2">
-                <img src={absUrl(dayImages[entry.iso_dt])} alt="" loading="lazy"
-                     on:error={() => { imgError[i] = true; imgError = imgError; }}
-                     on:load={(e) => { if (e.target.naturalWidth < 300) { imgError[i] = true; imgError = imgError; } }}
-                     class="w-full h-full object-cover" />
+            {#if dayImages[entry.iso_dt] && !imgError[i]}
+              <div class="-mx-4 -mt-3 mb-3">
+                <div style="aspect-ratio:16/9; background:#f5f4f2">
+                  <img src={absUrl(dayImages[entry.iso_dt])} alt="" loading="lazy"
+                       on:error={() => { imgError[i] = true; imgError = imgError; }}
+                       on:load={(e) => { if (e.target.naturalWidth < 300) { imgError[i] = true; imgError = imgError; } }}
+                       class="w-full h-full object-cover"
+                       style="filter:grayscale({slideGrayscale[i] ?? 1}); transition:filter 0.3s ease" />
+                </div>
               </div>
-              <div class="absolute bottom-0 left-0 right-0 px-4 pt-6 pb-3"
-                   style="background:linear-gradient(to top, rgba(0,0,0,0.65), transparent)">
-                <p class="text-sm font-semibold leading-snug" style="color:#ffffff">{entry.headline_txt}</p>
+            {:else if q_story[0] && Number.isFinite(+q_story[0].geo_lat)}
+              <div class="-mx-4 -mt-3 mb-3 overflow-hidden" style="aspect-ratio:16/9; background:#f5f4f2; isolation:isolate">
+                <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5 }}
+                     style="height:100%; width:100%; filter:grayscale({slideGrayscale[i] ?? 1}); transition:filter 0.3s ease"></div>
               </div>
-            </div>
-          {:else}
-            <p class="text-sm font-medium leading-snug mb-2" style="color:#15140F">{entry.headline_txt}</p>
-          {/if}
+            {/if}
 
-          {#if entry.summary_txt}
-            <p use:clampDetect={i}
-               class="card-text text-sm leading-relaxed overflow-hidden mb-1"
-               style="color:#57534e; max-height:{expanded[i] ? (fullHeight[i] ? fullHeight[i] + 'px' : '600px') : truncated[i] === false ? 'none' : '6.5em'}; display:-webkit-box; -webkit-box-orient:vertical; line-clamp:{expanded[i] ? 'none' : 4}; -webkit-line-clamp:{expanded[i] ? 'none' : 4};"
-               >{entry.summary_txt}</p>
-            {#if truncated[i]}
+            <p class="text-sm font-semibold leading-snug mb-2"
+               style="color:#15140F; min-height:5.5em; {expanded[i] ? '' : 'display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden'}"
+               >{entry.headline_txt}</p>
+
+            {#if entry.summary_txt}
+              {#if expanded[i]}
+                <div in:slide={{ duration: 320 }} out:slide={{ duration: 200 }}>
+                  <p class="text-sm leading-relaxed mb-2" style="color:#57534e">{entry.summary_txt}</p>
+                </div>
+              {/if}
               <button type="button"
-                class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none transition-colors"
+                class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none"
                 style="color:#a8a29e; background:none; border:none; padding:0"
+                on:pointerup|stopPropagation
                 on:click|preventDefault|stopPropagation={() => { expanded[i] = !expanded[i]; expanded = expanded; }}>
                 {expanded[i] ? 'Скрыть' : 'Показать полностью'}
                 <span style="display:inline-flex; transform:rotate({expanded[i] ? '180deg' : '0deg'}); transition:transform 0.2s">
@@ -562,34 +702,14 @@ ORDER BY day
                 </span>
               </button>
             {/if}
-          {/if}
 
+          </div>
         </div>
 
-        <!-- Иконка перехода к источникам — шеврон вправо -->
-        <a href="/stories/{params.story}/{entry.iso_dt}"
-           on:click|stopPropagation
-           class="absolute top-0 bottom-0 right-0 flex items-center justify-center"
-           style="width:56px; transform:translateX({slidIdx === i ? '0' : '100%'}); transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)">
-          <div class="rounded-full flex items-center justify-center"
-               style="width:36px; height:36px; border:1px solid #e7e5e4; background:#fafaf9">
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="#78716c">
-              <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
-            </svg>
-          </div>
-        </a>
-
       </div>
-    </div>
-  {/each}
-
-  {#if hasMore}
-  <div class="mt-2 text-center">
-    <button type="button"
-      class="text-xs text-[#c4bca9] cursor-pointer hover:text-stone-500"
-      on:click={() => shown += PAGE_SIZE}>Предыдущие дни</button>
+    {/each}
   </div>
-  {/if}
+
 </div>
 {:else}
 <div class="not-prose mt-4 p-6 bg-amber-50 border border-amber-200 rounded-xl">
@@ -602,7 +722,7 @@ ORDER BY day
 ## Прогноз на {q_forecasts[0].horizon_days} дней
 
 <div class="forecast-carousel not-prose mt-2 mb-10" use:dragScroll
-     style="display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x proximity; padding-bottom:4px; user-select:none; -webkit-user-select:none;">
+     style="display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x proximity; padding-bottom:4px; user-select:none; -webkit-user-select:none; isolation:isolate">
   {#each q_forecasts as f}
     {@const delta = formatDelta(f.delta_pp)}
     <div class="rounded-xl border relative cursor-pointer"
@@ -707,4 +827,6 @@ ORDER BY day
       <ECharts config={newsBarChart(q_news_by_day)} height="120px" />
     </div>
   {/if}
+</div>
+
 </div>

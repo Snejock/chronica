@@ -1,8 +1,13 @@
 ---
+full_width: false
 hide_breadcrumbs: true
 ---
 
 <script>
+  import { getContext as _getCtx } from 'svelte';
+  const breadcrumb = _getCtx('breadcrumb');
+  $: if (q_story_name?.[0]?.story_nm) breadcrumb?.set({ storyName: q_story_name[0].story_nm });
+
   const MONTHS_GEN = [
     'января','февраля','марта','апреля','мая','июня',
     'июля','августа','сентября','октября','ноября','декабря'
@@ -47,6 +52,7 @@ hide_breadcrumbs: true
 
   let activeCountry = null;
   let activeFeed = null;
+  let openFilter = null;
 
   let truncated  = {};
   let expanded   = {};
@@ -98,6 +104,94 @@ hide_breadcrumbs: true
     feedCount: new Set(filtered.map(i => i.feed_nm)).size,
   };
 
+  let pageEl;
+
+  onMount(() => {
+    // iOS-подобная формула убывающего натяжения (rubber-band):
+    // начинается почти линейно, асимптотически замедляется к max.
+    function rubberBand(x, max = 80) {
+      return max * (1 - 1 / (x * 0.55 / max + 1));
+    }
+
+    let hitY = null, applied = 0, edge = null;
+    let startX = null, startY = null, axis = null; // 'h' | 'v' | null
+
+    const isTop    = () => window.scrollY <= 1;
+    const isBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
+
+    function reset(animate) {
+      if (applied > 0 && pageEl) {
+        if (animate) {
+          pageEl.style.transition = 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)';
+          pageEl.style.transform  = '';
+          setTimeout(() => { if (pageEl) pageEl.style.transition = ''; }, 500);
+        } else {
+          pageEl.style.transform = '';
+        }
+      }
+      hitY = null; applied = 0; edge = null;
+      startX = null; startY = null; axis = null;
+    }
+
+    function onTouchStart(e) {
+      reset(false);
+      if (e.touches.length === 1) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      }
+    }
+
+    function onTouchMove(e) {
+      if (!pageEl || e.touches.length !== 1) return;
+      const tx = e.touches[0].clientX;
+      const ty = e.touches[0].clientY;
+
+      if (axis === null && startX !== null) {
+        const dx = Math.abs(tx - startX);
+        const dy = Math.abs(ty - startY);
+        if (dx > 6 || dy > 6) axis = dx > dy ? 'h' : 'v';
+      }
+      if (axis === 'h') return;
+
+      if (isBottom()) {
+        if (edge !== 'bottom') { edge = 'bottom'; hitY = ty; }
+        const over = hitY - ty;
+        if (over > 0) {
+          applied = rubberBand(over);
+          pageEl.style.transform = `translateY(${-applied}px)`;
+          e.preventDefault();
+        } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+
+      } else if (isTop()) {
+        if (edge !== 'top') { edge = 'top'; hitY = ty; }
+        const over = ty - hitY;
+        if (over > 0) {
+          applied = rubberBand(over);
+          pageEl.style.transform = `translateY(${applied}px)`;
+          e.preventDefault();
+        } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+
+      } else {
+        if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+        hitY = null; edge = null;
+      }
+    }
+
+    function onTouchEnd() { reset(true); }
+
+    document.addEventListener('touchstart', onTouchStart, { passive: true });
+    document.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    document.addEventListener('touchend',   onTouchEnd);
+    document.addEventListener('touchcancel', onTouchEnd);
+
+    return () => {
+      document.removeEventListener('touchstart', onTouchStart);
+      document.removeEventListener('touchmove',  onTouchMove);
+      document.removeEventListener('touchend',   onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchEnd);
+    };
+  });
+
 </script>
 
 <style>
@@ -107,6 +201,11 @@ hide_breadcrumbs: true
   .expand-btn { -webkit-tap-highlight-color: transparent; }
   .expand-btn:active { color: #a8a29e !important; }
 </style>
+
+```sql q_story_name
+SELECT story_nm FROM dwh_pg_1.b_stories
+WHERE story_id = ${params.story} AND language_code = 'ru'
+```
 
 ```sql q_news_feed
 SELECT
@@ -125,12 +224,8 @@ WHERE story_id = ${params.story}
 ORDER BY published_dttm DESC
 ```
 
-<div class="not-prose mt-6 mb-5 flex items-center gap-3">
-<a href="/stories/{params.story}"
-     class="inline-flex items-center px-2 py-1 rounded-full text-sm flex-shrink-0"
-     style="color:#78716c; border:1px solid #e7e5e4; background:#fafaf9;">←</a>
-<h2 class="text-xl font-semibold m-0" style="color:#15140F">Источники за {ruDate}</h2>
-</div>
+<div bind:this={pageEl}>
+<h2 class="not-prose mt-6 mb-5 text-xl font-semibold" style="color:#15140F">Источники за {ruDate}</h2>
 
 {#if q_news_feed.length > 0}
 
@@ -140,37 +235,79 @@ ORDER BY published_dttm DESC
   &nbsp;·&nbsp;{pluralize(stats.feedCount, 'источник', 'источника', 'источников')}
 </p>
 
-<!-- Фильтры по странам -->
-{#if countries.length >= 2}
-<div class="not-prose flex flex-wrap gap-2 mb-3">
-  <button type="button"
-    class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer"
-    data-act={activeCountry === null}
-    style={activeCountry === null ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:#e7e5e4; background:#fafaf9;'}
-    on:click={() => activeCountry = null}>Все страны</button>
-  {#each countries as cc}
-    <button type="button"
-      class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border cursor-pointer"
-      style={activeCountry === cc ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:#e7e5e4; background:#fafaf9;'}
-      on:click={() => activeCountry = activeCountry === cc ? null : cc}>{flag(cc) || cc}&nbsp;{cc}</button>
-  {/each}
-</div>
+<!-- Фильтры -->
+{#if countries.length >= 2 || feeds.length >= 2}
+
+{#if openFilter}
+  <div class="not-prose fixed inset-0 z-40" on:click={() => openFilter = null} aria-hidden="true"></div>
 {/if}
 
-<!-- Фильтры по лентам -->
-{#if feeds.length >= 2}
-<div class="not-prose flex flex-wrap gap-2 mb-5">
-  <button type="button"
-    class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer"
-    data-act={activeFeed === null}
-    style={activeFeed === null ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:#e7e5e4; background:#fafaf9;'}
-    on:click={() => activeFeed = null}>Все ленты</button>
-  {#each feeds as feed}
+<div class="not-prose flex gap-2 mb-5" style="position:relative; z-index:41">
+
+  {#if countries.length >= 2}
+  <div style="position:relative">
     <button type="button"
-      class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border cursor-pointer"
-      style={activeFeed === feed ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#78716c; border-color:#e7e5e4; background:#fafaf9;'}
-      on:click={() => activeFeed = activeFeed === feed ? null : feed}>{feed}</button>
-  {/each}
+      on:click|stopPropagation={() => openFilter = openFilter === 'country' ? null : 'country'}
+      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border cursor-pointer transition-colors"
+      style={activeCountry ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#57534e; border-color:#e7e5e4; background:#fafaf9;'}>
+      {activeCountry ? `${flag(activeCountry) || activeCountry} ${activeCountry}` : 'Страна'}
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+           style="transition:transform 0.2s; transform:rotate({openFilter === 'country' ? '180deg' : '0deg'})">
+        <path d="M2 4l4 4 4-4"/>
+      </svg>
+    </button>
+    {#if openFilter === 'country'}
+      <div class="absolute left-0 rounded-xl border py-1"
+           style="top:calc(100% + 6px); background:#fff; border-color:#e7e5e4; box-shadow:0 4px 20px rgba(0,0,0,0.1); min-width:160px; max-height:260px; overflow-y:auto; z-index:50">
+        <button type="button" on:click|stopPropagation={() => { activeCountry = null; openFilter = null; }}
+          class="w-full text-left px-4 py-2.5 text-sm cursor-pointer transition-colors"
+          style="background:none; border:none; color:{activeCountry === null ? '#15140F' : '#78716c'}; font-weight:{activeCountry === null ? '500' : '400'}">
+          Все страны
+        </button>
+        {#each countries as cc}
+          <button type="button" on:click|stopPropagation={() => { activeCountry = cc; openFilter = null; }}
+            class="w-full text-left px-4 py-2.5 text-sm cursor-pointer transition-colors"
+            style="background:none; border:none; color:{activeCountry === cc ? '#15140F' : '#78716c'}; font-weight:{activeCountry === cc ? '500' : '400'}">
+            {flag(cc) || ''} {cc}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
+  {/if}
+
+  {#if feeds.length >= 2}
+  <div style="position:relative">
+    <button type="button"
+      on:click|stopPropagation={() => openFilter = openFilter === 'feed' ? null : 'feed'}
+      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border cursor-pointer transition-colors"
+      style={activeFeed ? 'color:#fff; border-color:#57534e; background:#57534e;' : 'color:#57534e; border-color:#e7e5e4; background:#fafaf9;'}>
+      {activeFeed || 'Источник'}
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+           style="transition:transform 0.2s; transform:rotate({openFilter === 'feed' ? '180deg' : '0deg'})">
+        <path d="M2 4l4 4 4-4"/>
+      </svg>
+    </button>
+    {#if openFilter === 'feed'}
+      <div class="absolute left-0 rounded-xl border py-1"
+           style="top:calc(100% + 6px); background:#fff; border-color:#e7e5e4; box-shadow:0 4px 20px rgba(0,0,0,0.1); min-width:180px; max-height:260px; overflow-y:auto; z-index:50">
+        <button type="button" on:click|stopPropagation={() => { activeFeed = null; openFilter = null; }}
+          class="w-full text-left px-4 py-2.5 text-sm cursor-pointer transition-colors"
+          style="background:none; border:none; color:{activeFeed === null ? '#15140F' : '#78716c'}; font-weight:{activeFeed === null ? '500' : '400'}">
+          Все источники
+        </button>
+        {#each feeds as feed}
+          <button type="button" on:click|stopPropagation={() => { activeFeed = feed; openFilter = null; }}
+            class="w-full text-left px-4 py-2.5 text-sm cursor-pointer transition-colors"
+            style="background:none; border:none; color:{activeFeed === feed ? '#15140F' : '#78716c'}; font-weight:{activeFeed === feed ? '500' : '400'}">
+            {feed}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
+  {/if}
+
 </div>
 {/if}
 
@@ -184,38 +321,38 @@ ORDER BY published_dttm DESC
       on:click={() => { activeCountry = null; activeFeed = null; }}>Сбросить</button>
   </div>
 {:else}
-<div class="not-prose mt-2 relative" style="padding-left:60px">
+<div class="not-prose mt-2 relative" style="padding-left:44px">
   <!-- Вертикальная линия -->
-  <div class="absolute" style="top:0; bottom:20px; left:36px; width:1px; background:#e7e5e4"></div>
+  <div class="absolute" style="top:0; bottom:20px; left:32px; width:1px; background:#e7e5e4"></div>
 
   {#each grouped as group}
-    <div class="mb-6">
-      <p class="text-xs font-medium uppercase tracking-widest mb-3" style="color:#c4bca9">{group.label}</p>
+    <div class="mb-4">
+      <p class="text-xs font-medium uppercase tracking-widest mb-2" style="color:#c4bca9; margin-left:-44px; position:relative; z-index:2; background:#ffffff">{group.label}</p>
       <div class="flex flex-col">
         {#each group.items as item}
           {@const _t = new Date(item.published_dttm).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}
-          <div class="relative mb-3"
-               on:click={() => { slidUid = slidUid === item.uid ? null : item.uid; }}>
+          <div class="relative mb-2">
 
             <!-- Время (слева от вертикальной линии) -->
-            <div class="absolute text-right select-none pointer-events-none" style="top:14px; left:-60px; width:30px">
+            <div class="absolute text-right select-none pointer-events-none" style="top:12px; left:-44px; width:24px">
               <span class="block font-medium" style="font-size:15px; line-height:1.1; color:#57534e">{_t.slice(0, 3)}</span>
-              <span class="block" style="font-size:11px; color:#c4bca9; margin-top:1px">{_t.slice(3)}</span>
+              <span class="block" style="font-size:10px; color:#c4bca9; margin-top:1px">{_t.slice(3)}</span>
             </div>
 
             <!-- Точка на вертикальной линии -->
-            <div class="absolute rounded-full pointer-events-none" style="top:16px; left:-28px; width:8px; height:8px; background:#e7e5e4"></div>
+            <div class="absolute rounded-full pointer-events-none" style="top:16px; left:-16px; width:8px; height:8px; background:#e7e5e4"></div>
 
             <!-- Соединительная линия -->
-            <div class="absolute pointer-events-none" style="top:20px; left:-20px; width:20px; height:1px; background:#e7e5e4"></div>
+            <div class="absolute pointer-events-none" style="top:20px; left:-8px; width:8px; height:1px; background:#e7e5e4"></div>
 
-            <!-- Карточка (бордер фиксирован, содержимое скользит внутри) -->
-            <div class="rounded-xl border overflow-hidden relative transition-colors"
+            <!-- Карточка -->
+            <div class="rounded-xl border overflow-hidden relative"
                  style="background:#faf9f7; border-color:#e7e5e4">
 
-              <!-- Скользящее содержимое -->
+              <!-- Содержимое — уезжает на -100% при открытии -->
               <div class="px-4 py-3"
-                   style="transform:translateX({slidUid === item.uid ? '-56px' : '0'}); transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)">
+                   on:click={() => { if (item.news_link) slidUid = item.uid; }}
+                   style="transform:translateX({slidUid === item.uid ? '-100%' : '0'}); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); {item.news_link ? 'cursor:pointer' : ''}">
 
                 {#if item.image_url && !imgError[item.uid]}
                   <!-- Картинка без отступов + мета + заголовок поверх -->
@@ -280,20 +417,33 @@ ORDER BY published_dttm DESC
 
               </div>
 
-              <!-- Иконка — скользит из-за правого края внутри карточки -->
+              <!-- Оверлей — полностью перекрывает карточку -->
               {#if item.news_link}
-                <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
-                   on:click|stopPropagation
-                   class="absolute top-0 bottom-0 right-0 flex items-center justify-center"
-                   style="width:56px; transform:translateX({slidUid === item.uid ? '0' : '100%'}); transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)">
-                  <div class="rounded-full flex items-center justify-center"
-                       style="width:36px; height:36px; border:1px solid #e7e5e4; background:#fafaf9">
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="#78716c">
+                <div class="absolute inset-0 flex items-center justify-center"
+                     on:click={() => slidUid = null}
+                     style="transform:translateX({slidUid === item.uid ? '0' : '100%'}); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); background:#faf9f7; cursor:pointer">
+                  <span on:click|stopPropagation={() => slidUid = null}
+                        class="absolute top-3 left-3 inline-flex items-center gap-1"
+                        style="cursor:pointer; color:#a8a29e; font-size:12px; font-weight:500">
+                    <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 4L6 10L12 16"/>
+                    </svg>
+                    Назад
+                  </span>
+                  <a href={absUrl(item.news_link)} target="_blank" rel="noopener"
+                     on:click|stopPropagation
+                     class="flex items-center gap-2 px-5 py-2.5 rounded-xl"
+                     style="border:1px solid #e7e5e4; background:#f5f4f2; text-decoration:none; color:#15140F">
+                    <svg width="17" height="17" viewBox="0 0 20 20" fill="#57534e">
                       <path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd"/>
                       <path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd"/>
                     </svg>
-                  </div>
-                </a>
+                    <span>
+                      <span style="display:block; font-size:14px; font-weight:500; color:#15140F">Читать оригинал</span>
+                      <span style="display:block; font-size:11px; color:#a8a29e; margin-top:1px">{domain(item.news_link)}</span>
+                    </span>
+                  </a>
+                </div>
               {/if}
 
             </div>
@@ -312,3 +462,6 @@ ORDER BY published_dttm DESC
 </div>
 
 {/if}
+
+<div style="height:32px"></div>
+</div>
