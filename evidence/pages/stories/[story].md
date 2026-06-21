@@ -829,4 +829,8 @@ ORDER BY day
   {/if}
 </div>
 
+{#each q_stories_summaries as entry}
+  <a href="/stories/{params.story}/{entry.iso_dt}" aria-hidden="true" tabindex="-1" style="display:none"></a>
+{/each}
+
 </div>
