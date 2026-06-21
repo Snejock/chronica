@@ -35,6 +35,7 @@ services:
       - ../../.env
     environment:
       - EVIDENCE_REBUILD_INTERVAL=1200
+      - ORIGIN=https://chronica.life
     volumes:
       - ../static:/evidence/static
       - ../pages:/evidence/pages
