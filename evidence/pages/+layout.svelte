@@ -3,7 +3,7 @@
   import { setContext } from 'svelte';
   import { writable } from 'svelte/store';
   import { page } from '$app/stores';
-  import { onNavigate } from '$app/navigation';
+  import { beforeNavigate, onNavigate, goto } from '$app/navigation';
   import { showQueries } from '@evidence-dev/component-utilities/stores';
   import '@evidence-dev/tailwind/fonts.css';
   import '../app.css';
@@ -18,7 +18,21 @@
 
   $: storyId = $page.params?.story;
   $: day = $page.params?.day;
-  $: parentUrl = day ? `/stories/${storyId}` : '/stories';
+  $: parentUrl = day ? `/stories/${storyId}` : storyId ? '/stories' : '/';
+
+  let _goingUp = false;
+  beforeNavigate((nav) => {
+    if (_goingUp || !nav.from || !nav.to) return;
+    if (nav.type === 'link' || nav.type === 'goto') {
+      const fromDepth = nav.from.url.pathname.split('/').filter(Boolean).length;
+      const toDepth = nav.to.url.pathname.split('/').filter(Boolean).length;
+      if (toDepth < fromDepth) {
+        nav.cancel();
+        _goingUp = true;
+        goto(nav.to.url.pathname, { replaceState: true }).finally(() => { _goingUp = false; });
+      }
+    }
+  });
 
   onNavigate((nav) => {
     if (!document.startViewTransition) return;
@@ -47,7 +61,7 @@
       active = false;
       const dx = e.clientX - startX, dy = e.clientY - startY;
       if (dx > MIN && Math.abs(dx) > Math.abs(dy) * 1.5 && currentUrl) {
-        window.location.href = currentUrl;
+        goto(currentUrl);
       }
     }
     window.addEventListener('pointerdown', down);

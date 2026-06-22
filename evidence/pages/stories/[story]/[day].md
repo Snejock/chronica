@@ -107,14 +107,12 @@ hide_breadcrumbs: true
   let pageEl;
 
   onMount(() => {
-    // iOS-подобная формула убывающего натяжения (rubber-band):
-    // начинается почти линейно, асимптотически замедляется к max.
     function rubberBand(x, max = 80) {
       return max * (1 - 1 / (x * 0.55 / max + 1));
     }
 
     let hitY = null, applied = 0, edge = null;
-    let startX = null, startY = null, axis = null; // 'h' | 'v' | null
+    let startX = null, startY = null, axis = null;
 
     const isTop    = () => window.scrollY <= 1;
     const isBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
@@ -153,27 +151,39 @@ hide_breadcrumbs: true
       }
       if (axis === 'h') return;
 
-      if (isBottom()) {
+      const atTop = isTop(), atBottom = isBottom();
+
+      if (atTop && atBottom) {
+        if (edge === null) {
+          const dy = ty - startY;
+          if (dy > 6) { edge = 'top'; hitY = ty; }
+          else if (dy < -6) { edge = 'bottom'; hitY = ty; }
+          else return;
+        }
+      } else if (atTop && !atBottom) {
+        if (edge !== 'top') { edge = 'top'; hitY = ty; }
+      } else if (atBottom && !atTop) {
         if (edge !== 'bottom') { edge = 'bottom'; hitY = ty; }
+      } else {
+        if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+        hitY = null; edge = null;
+        return;
+      }
+
+      if (edge === 'bottom') {
         const over = hitY - ty;
         if (over > 0) {
           applied = rubberBand(over);
           pageEl.style.transform = `translateY(${-applied}px)`;
           e.preventDefault();
         } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
-
-      } else if (isTop()) {
-        if (edge !== 'top') { edge = 'top'; hitY = ty; }
+      } else if (edge === 'top') {
         const over = ty - hitY;
         if (over > 0) {
           applied = rubberBand(over);
           pageEl.style.transform = `translateY(${applied}px)`;
           e.preventDefault();
         } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
-
-      } else {
-        if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
-        hitY = null; edge = null;
       }
     }
 
@@ -225,7 +235,8 @@ ORDER BY published_dttm DESC
 ```
 
 <div bind:this={pageEl}>
-<h2 class="not-prose mt-6 mb-5 text-xl font-semibold" style="color:#15140F">Источники за {ruDate}</h2>
+
+# Публикации за {ruDate}
 
 {#if q_news_feed.length > 0}
 
@@ -423,8 +434,8 @@ ORDER BY published_dttm DESC
                      on:click={() => slidUid = null}
                      style="transform:translateX({slidUid === item.uid ? '0' : '100%'}); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); background:#faf9f7; cursor:pointer">
                   <span on:click|stopPropagation={() => slidUid = null}
-                        class="absolute top-3 left-3 inline-flex items-center gap-1"
-                        style="cursor:pointer; color:#a8a29e; font-size:12px; font-weight:500">
+                        class="inline-flex items-center gap-1"
+                        style="position:absolute; top:12px; left:12px; cursor:pointer; color:#a8a29e; font-size:12px; font-weight:500">
                     <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M12 4L6 10L12 16"/>
                     </svg>

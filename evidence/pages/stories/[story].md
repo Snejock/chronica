@@ -20,7 +20,8 @@ hide_breadcrumbs: true
     }
 
     let hitY = null, applied = 0, edge = null;
-    let startX = null, startY = null, axis = null; // 'h' | 'v' | null
+    let startX = null, startY = null, axis = null;
+
     const isTop    = () => window.scrollY <= 1;
     const isBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
 
@@ -51,36 +52,46 @@ hide_breadcrumbs: true
       const tx = e.touches[0].clientX;
       const ty = e.touches[0].clientY;
 
-      // Определяем ось жеста по первым 6px движения и фиксируем до touchend
       if (axis === null && startX !== null) {
         const dx = Math.abs(tx - startX);
         const dy = Math.abs(ty - startY);
         if (dx > 6 || dy > 6) axis = dx > dy ? 'h' : 'v';
       }
-      // Горизонтальный свайп (карусель) — не трогаем страницу
       if (axis === 'h') return;
 
-      if (isBottom()) {
+      const atTop = isTop(), atBottom = isBottom();
+
+      if (atTop && atBottom) {
+        if (edge === null) {
+          const dy = ty - startY;
+          if (dy > 6) { edge = 'top'; hitY = ty; }
+          else if (dy < -6) { edge = 'bottom'; hitY = ty; }
+          else return;
+        }
+      } else if (atTop && !atBottom) {
+        if (edge !== 'top') { edge = 'top'; hitY = ty; }
+      } else if (atBottom && !atTop) {
         if (edge !== 'bottom') { edge = 'bottom'; hitY = ty; }
+      } else {
+        if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+        hitY = null; edge = null;
+        return;
+      }
+
+      if (edge === 'bottom') {
         const over = hitY - ty;
         if (over > 0) {
           applied = rubberBand(over);
           pageEl.style.transform = `translateY(${-applied}px)`;
           e.preventDefault();
         } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
-
-      } else if (isTop()) {
-        if (edge !== 'top') { edge = 'top'; hitY = ty; }
+      } else if (edge === 'top') {
         const over = ty - hitY;
         if (over > 0) {
           applied = rubberBand(over);
           pageEl.style.transform = `translateY(${applied}px)`;
           e.preventDefault();
         } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
-
-      } else {
-        if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
-        hitY = null; edge = null;
       }
     }
 

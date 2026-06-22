@@ -4,6 +4,8 @@ hide_breadcrumbs: true
 ---
 
 <script>
+  let pageEl;
+
   onMount(() => {
     const WORDS = ["AI", "MONEY", "TECH", "WAR", "LIFE", "WORLD", "ART", "DATA"];
     const TYPE_MS   = 95;
@@ -53,7 +55,100 @@ hide_breadcrumbs: true
       cleanups.push(() => clearTimeout(timerId));
     });
 
-    return () => cleanups.forEach(fn => fn());
+    function rubberBand(x, max = 80) {
+      return max * (1 - 1 / (x * 0.55 / max + 1));
+    }
+
+    let hitY = null, applied = 0, edge = null;
+    let startX = null, startY = null, axis = null;
+
+    const isTop    = () => window.scrollY <= 1;
+    const isBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
+
+    function reset(animate) {
+      if (applied > 0 && pageEl) {
+        if (animate) {
+          pageEl.style.transition = 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)';
+          pageEl.style.transform  = '';
+          setTimeout(() => { if (pageEl) pageEl.style.transition = ''; }, 500);
+        } else {
+          pageEl.style.transform = '';
+        }
+      }
+      hitY = null; applied = 0; edge = null;
+      startX = null; startY = null; axis = null;
+    }
+
+    function onTouchStart(e) {
+      reset(false);
+      if (e.touches.length === 1) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      }
+    }
+
+    function onTouchMove(e) {
+      if (!pageEl || e.touches.length !== 1) return;
+      const tx = e.touches[0].clientX;
+      const ty = e.touches[0].clientY;
+
+      if (axis === null && startX !== null) {
+        const dx = Math.abs(tx - startX);
+        const dy = Math.abs(ty - startY);
+        if (dx > 6 || dy > 6) axis = dx > dy ? 'h' : 'v';
+      }
+      if (axis === 'h') return;
+
+      const atTop = isTop(), atBottom = isBottom();
+
+      if (atTop && atBottom) {
+        if (edge === null) {
+          const dy = ty - startY;
+          if (dy > 6) { edge = 'top'; hitY = ty; }
+          else if (dy < -6) { edge = 'bottom'; hitY = ty; }
+          else return;
+        }
+      } else if (atTop && !atBottom) {
+        if (edge !== 'top') { edge = 'top'; hitY = ty; }
+      } else if (atBottom && !atTop) {
+        if (edge !== 'bottom') { edge = 'bottom'; hitY = ty; }
+      } else {
+        if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+        hitY = null; edge = null;
+        return;
+      }
+
+      if (edge === 'bottom') {
+        const over = hitY - ty;
+        if (over > 0) {
+          applied = rubberBand(over);
+          pageEl.style.transform = `translateY(${-applied}px)`;
+          e.preventDefault();
+        } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+      } else if (edge === 'top') {
+        const over = ty - hitY;
+        if (over > 0) {
+          applied = rubberBand(over);
+          pageEl.style.transform = `translateY(${applied}px)`;
+          e.preventDefault();
+        } else if (applied > 0) { applied = 0; pageEl.style.transform = ''; }
+      }
+    }
+
+    function onTouchEnd() { reset(true); }
+
+    document.addEventListener('touchstart', onTouchStart, { passive: true });
+    document.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    document.addEventListener('touchend',   onTouchEnd);
+    document.addEventListener('touchcancel', onTouchEnd);
+
+    return () => {
+      cleanups.forEach(fn => fn());
+      document.removeEventListener('touchstart', onTouchStart);
+      document.removeEventListener('touchmove',  onTouchMove);
+      document.removeEventListener('touchend',   onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchEnd);
+    };
   });
 </script>
 
@@ -112,6 +207,7 @@ hide_breadcrumbs: true
   }
 </style>
 
+<div bind:this={pageEl}>
 <div class="not-prose flex flex-col items-center mt-16 mb-12">
 
   <span class="chronica-flag" aria-label="CHRONICA">
@@ -125,4 +221,5 @@ hide_breadcrumbs: true
     Собираем материалы из открытых источников, группируем по темам и формируем ежедневные сводки — чтобы следить за событиями без лишнего шума.
   </p>
 
+</div>
 </div>
