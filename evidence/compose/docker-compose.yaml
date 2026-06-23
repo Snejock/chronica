@@ -20,6 +20,7 @@ services:
       - ../evidence.config.yaml:/evidence/evidence.config.yaml
       - ../package.json:/evidence/package.json
       - ../package-lock.json:/evidence/package-lock.json
+      - chr-evidence-dev-modules:/evidence/node_modules
     command: ["dev"]
     # command: ["init"]  # инициализация проекта при первом запуске
 
@@ -44,4 +45,9 @@ services:
       - ../evidence.config.yaml:/evidence/evidence.config.yaml
       - ../package.json:/evidence/package.json
       - ../package-lock.json:/evidence/package-lock.json
+      - chr-evidence-prod-modules:/evidence/node_modules
     command: ["prod"]
+
+volumes:
+  chr-evidence-dev-modules:
+  chr-evidence-prod-modules:

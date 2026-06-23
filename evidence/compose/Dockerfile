@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     npm install -g degit && \
     mkdir -p ${WORKSPACE_DIR} && \
     mkdir -p /evidence-bin && \
+    mkdir -p ${WORKSPACE_DIR}/node_modules && \
     chown -R 1000:1000 ${WORKSPACE_DIR} && \
     chown -R 1000:1000 /evidence-bin && \
     rm -rf /var/lib/apt/lists/*
