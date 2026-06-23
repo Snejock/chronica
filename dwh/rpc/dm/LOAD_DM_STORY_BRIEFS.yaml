@@ -1,0 +1,181 @@
+input:
+  generate:
+    interval: "20m"
+    mapping: 'root = {}'
+
+pipeline:
+  threads: 1
+  processors:
+    # 1a. Удалить «зависшие» неактивные строки, у которых уже есть активная пара
+    - label: cleanup_inactive
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          DELETE FROM dm.story_brief b
+          WHERE b.is_active = false
+            AND EXISTS (
+                SELECT 1 FROM dm.story_brief a
+                WHERE a.story_id = b.story_id
+                  AND a.model_nm = b.model_nm
+                  AND a.language_code = b.language_code
+                  AND a.is_active = true
+            )
+
+    # 1b. Деактивировать брифы сюжетов без сводок за последние 5 дней
+    - label: deactivate_stale
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          UPDATE dm.story_brief b
+          SET is_active = false, _loaded_dttm = now()
+          WHERE b.is_active = true
+            AND NOT EXISTS (
+                SELECT 1 FROM dm.stories_summaries_d s
+                WHERE s.story_id = b.story_id
+                  AND s.language_code = b.language_code
+                  AND s.dt >= current_date - INTERVAL '4 day'
+            )
+
+    # 2. Выборка сюжетов со сводками за последние 5 дней
+    - label: postgres
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          WITH recent AS (
+              SELECT story_id, language_code, dt, headline_txt, summary_txt
+              FROM dm.stories_summaries_d
+              WHERE language_code = 'ru'
+                AND dt >= current_date - INTERVAL '4 day'
+          )
+          SELECT
+              r.story_id,
+              min(d.story_nm) AS story_nm,
+              r.language_code,
+              min(r.dt) AS coverage_from_dt,
+              max(r.dt) AS coverage_to_dt,
+              jsonb_agg(jsonb_build_object(
+                  'dt', r.dt,
+                  'headline_txt', r.headline_txt,
+                  'summary_txt', r.summary_txt
+              ) ORDER BY r.dt) AS days
+          FROM recent r
+          LEFT JOIN dds.s_story_details d
+                 ON d.story_id = r.story_id AND d.language_code = r.language_code
+          GROUP BY r.story_id, r.language_code
+
+    # 3. Guard + разворот батча
+    - mapping: |
+        root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
+
+    - unarchive:
+        format: json_array
+
+    # 4. Вызов LLM
+    - branch:
+        request_map: |
+          let system_instruction = """
+            You are a professional journalist and analyst.
+            You are given daily summaries of a single news story over several days.
+            Your task is to produce two texts:
+            1. lead_txt — a short, punchy newspaper-style headline (3-8 words). It must be strictly objective and unbiased: state the fact, not an opinion. No clickbait, no emotional coloring, no evaluative adjectives. Think Reuters/AP headline style.
+            2. brief_txt — a coherent analytical paragraph (4-6 sentences) summarizing the key developments over the covered period. Highlight the most significant events, turning points, and the overall trajectory of the story. Write in a professional, analytical tone.
+
+            Return strictly a JSON object with fields lead_txt and brief_txt.
+            Respond in Russian language only.
+          """
+
+          let prompt_text = """
+            Story: """ + this.story_nm.string().or("Unknown") + """
+            Coverage period: """ + this.coverage_from_dt.string() + """ — """ + this.coverage_to_dt.string() + """
+
+            Daily summaries:
+            """ + this.days.string() + """
+
+            Your response (JSON only, no explanations):
+          """
+
+          root = {
+            "model": "deepseek-v4-flash",
+            "stream": false,
+            "temperature": 0.4,
+            "top_p": 0.9,
+            "response_format": { "type": "json_object" },
+            "messages": [
+              { "role": "system", "content": $system_instruction },
+              { "role": "user",   "content": $prompt_text }
+            ]
+          }
+        processors:
+          - label: http
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
+          - mapping: |
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
+              root.ai_response = if $result != null { $result } else { null }
+        result_map: |
+          root.ai_response = this.ai_response
+
+    # 5. Логирование
+    - switch:
+        - check: 'this.ai_response != null'
+          processors:
+            - log:
+                level: INFO
+                message: '[🧠 LLM BRIEF] story_id: ${! this.story_id } | Lead: ${! this.ai_response.lead_txt}'
+
+output:
+  label: load_dm_story_briefs
+  sql_raw:
+    driver: postgres
+    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    query: |
+      INSERT INTO dm.story_brief (
+        story_id, model_nm, language_code, lead_txt, brief_txt,
+        coverage_from_dt, coverage_to_dt, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+      ON CONFLICT (story_id, model_nm, language_code, is_active) DO UPDATE SET
+        _loaded_dttm     = now(),
+        lead_txt         = EXCLUDED.lead_txt,
+        brief_txt        = EXCLUDED.brief_txt,
+        coverage_from_dt = EXCLUDED.coverage_from_dt,
+        coverage_to_dt   = EXCLUDED.coverage_to_dt
+    args_mapping: |
+      root = [
+        this.story_id,
+        "deepseek-v4-flash:cloud",
+        this.language_code,
+        this.lead_txt,
+        this.brief_txt,
+        this.coverage_from_dt,
+        this.coverage_to_dt
+      ]
+    batching:
+      count: 10
+      period: 1s
+
+  processors:
+    - mapping: |
+        root = if this.ai_response == null || this.ai_response == "" { deleted() } else { this }
+    - mapping: |
+        root = {
+          "story_id": this.story_id.number(),
+          "language_code": this.language_code.string(),
+          "lead_txt": this.ai_response.lead_txt.string(),
+          "brief_txt": this.ai_response.brief_txt.string(),
+          "coverage_from_dt": this.coverage_from_dt,
+          "coverage_to_dt": this.coverage_to_dt
+        }

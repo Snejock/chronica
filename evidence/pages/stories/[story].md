@@ -556,6 +556,15 @@ WHERE story_id = ${params.story}
   AND language_code = 'ru'
 ```
 
+```sql q_story_brief
+SELECT brief_txt
+FROM dwh_pg_1.story_brief
+WHERE story_id = ${params.story}
+  AND language_code = 'ru'
+  AND is_active = true
+LIMIT 1
+```
+
 ```sql q_stories_summaries
 SELECT
     dt
@@ -645,6 +654,10 @@ ORDER BY day
 
 {#if q_story[0]}
 # {q_story[0].story_nm}
+{/if}
+
+{#if q_story_brief.length > 0}
+<p class="text-sm leading-relaxed" style="color:#57534e; margin-bottom:24px">{q_story_brief[0].brief_txt}</p>
 {/if}
 
 ## Хроника событий
