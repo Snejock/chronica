@@ -15,7 +15,7 @@ SELECT
     , f.story_id
     , f.horizon_days
     , f.forecast_txt
-FROM bds.b_forecasts_posteriors b
+FROM bds.b_forecast_posteriors b
 JOIN dds.d_forecasts f
     ON  f.forecast_id   = b.forecast_id
     AND f.language_code = b.language_code

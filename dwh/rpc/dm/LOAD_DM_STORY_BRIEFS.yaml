@@ -12,10 +12,10 @@ pipeline:
         driver: postgres
         dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
-          DELETE FROM dm.story_brief b
+          DELETE FROM dm.story_briefs b
           WHERE b.is_active = false
             AND EXISTS (
-                SELECT 1 FROM dm.story_brief a
+                SELECT 1 FROM dm.story_briefs a
                 WHERE a.story_id = b.story_id
                   AND a.model_nm = b.model_nm
                   AND a.language_code = b.language_code
@@ -28,11 +28,11 @@ pipeline:
         driver: postgres
         dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
-          UPDATE dm.story_brief b
+          UPDATE dm.story_briefs b
           SET is_active = false, _loaded_dttm = now()
           WHERE b.is_active = true
             AND NOT EXISTS (
-                SELECT 1 FROM dm.stories_summaries_d s
+                SELECT 1 FROM dm.story_summaries_d s
                 WHERE s.story_id = b.story_id
                   AND s.language_code = b.language_code
                   AND s.dt >= current_date - INTERVAL '4 day'
@@ -46,7 +46,7 @@ pipeline:
         query: |
           WITH recent AS (
               SELECT story_id, language_code, dt, headline_txt, summary_txt
-              FROM dm.stories_summaries_d
+              FROM dm.story_summaries_d
               WHERE language_code = 'ru'
                 AND dt >= current_date - INTERVAL '4 day'
           )
@@ -143,7 +143,7 @@ output:
     driver: postgres
     dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
     query: |
-      INSERT INTO dm.story_brief (
+      INSERT INTO dm.story_briefs (
         story_id, model_nm, language_code, lead_txt, brief_txt,
         coverage_from_dt, coverage_to_dt, is_active
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, true)

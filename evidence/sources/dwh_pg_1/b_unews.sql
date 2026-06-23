@@ -4,4 +4,4 @@ SELECT
     , language_code
     , title_txt
     , summary_txt
-FROM bds.b_news_unified
+FROM bds.b_unews

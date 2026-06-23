@@ -5,4 +5,4 @@ SELECT
     , language_code
     , headline_txt
     , summary_txt
-FROM dm.stories_summaries_d
+FROM dm.story_summaries_d

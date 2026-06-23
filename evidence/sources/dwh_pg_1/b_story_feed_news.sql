@@ -10,7 +10,7 @@ SELECT
     , b.image_url
     , s.title_txt
     , s.summary_txt
-FROM bds.b_news_stories_feeds b
+FROM bds.b_story_feed_news b
 LEFT JOIN dds.s_news_texts s ON s.news_id = b.news_id
       AND s.language_code = 'ru'
 WHERE b.model_nm = 'embeddinggemma:300m'

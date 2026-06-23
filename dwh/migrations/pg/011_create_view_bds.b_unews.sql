@@ -1,5 +1,5 @@
-DROP MATERIALIZED VIEW IF EXISTS bds.b_news_unified CASCADE;
-CREATE MATERIALIZED VIEW bds.b_news_unified AS
+DROP MATERIALIZED VIEW IF EXISTS bds.b_unews CASCADE;
+CREATE MATERIALIZED VIEW bds.b_unews AS
 WITH uniq_news AS (
     SELECT
         ne.news_id
@@ -35,4 +35,4 @@ JOIN dds.d_rss_feeds d ON h.feed_id = d.feed_id
 JOIN dds.s_news_texts s ON u.news_id = s.news_id AND s.language_code IN ('en', 'ru')
 ;
 
-CREATE INDEX b_news_unified_embedding_idx ON bds.b_news_unified USING hnsw (embedding_vct vector_cosine_ops);
+CREATE INDEX b_unews_embedding_idx ON bds.b_unews USING hnsw (embedding_vct vector_cosine_ops);

@@ -292,20 +292,20 @@ WHERE language_code = 'ru'
 
 ```sql q_latest_headlines
 SELECT story_id, dt, headline_txt, summary_txt
-FROM dwh_pg_1.stories_summaries_d
+FROM dwh_pg_1.story_summaries_d
 WHERE language_code = 'ru'
 QUALIFY row_number() OVER (PARTITION BY story_id ORDER BY dt DESC) = 1
 ```
 
 ```sql q_last_update
 SELECT story_id, MAX(published_dttm) AS last_dttm
-FROM dwh_pg_1.b_unews_stories_texts
+FROM dwh_pg_1.b_story_unews_texts
 GROUP BY 1
 ```
 
 ```sql q_activity
 SELECT story_id, CAST(published_dttm AS DATE) AS day, COUNT(*) AS cnt
-FROM dwh_pg_1.b_unews_stories_texts
+FROM dwh_pg_1.b_story_unews_texts
 WHERE published_dttm >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY 1, 2
 ORDER BY 1, 2
@@ -318,7 +318,7 @@ FROM (
         story_id,
         image_url,
         ROW_NUMBER() OVER (PARTITION BY story_id ORDER BY published_dttm DESC) AS rn
-    FROM dwh_pg_1.b_news_stories_feeds
+    FROM dwh_pg_1.b_story_feed_news
     WHERE image_url IS NOT NULL AND image_url != ''
 ) t
 WHERE rn <= 5
@@ -328,12 +328,12 @@ ORDER BY story_id, rn
 ```sql q_top_forecast
 WITH latest AS (
     SELECT forecast_id, MAX(published_dttm) AS dttm
-    FROM dwh_pg_1.b_forecasts_posteriors
+    FROM dwh_pg_1.b_forecast_posteriors
     WHERE language_code = 'ru'
     GROUP BY forecast_id
 )
 SELECT b.story_id, b.forecast_nm, CAST(ROUND(b.p_posterior_prt * 100) AS INTEGER) AS pct
-FROM dwh_pg_1.b_forecasts_posteriors b
+FROM dwh_pg_1.b_forecast_posteriors b
 JOIN latest l ON l.forecast_id = b.forecast_id AND l.dttm = b.published_dttm
 WHERE b.language_code = 'ru'
 QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DESC) = 1

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS dm.story_brief (
+CREATE TABLE IF NOT EXISTS dm.story_briefs (
     _loaded_dttm     timestamp(0) with time zone DEFAULT now(),
     story_id         integer   NOT NULL,
     model_nm         text      NOT NULL,
@@ -9,11 +9,11 @@ CREATE TABLE IF NOT EXISTS dm.story_brief (
     coverage_to_dt   date,
     is_active        boolean   DEFAULT true,
 
-    CONSTRAINT story_brief_pkey
+    CONSTRAINT story_briefs_pkey
         PRIMARY KEY (story_id, model_nm, language_code, is_active),
 
-    CONSTRAINT story_brief_story_id_fkey
+    CONSTRAINT story_briefs_story_id_fkey
         FOREIGN KEY (story_id) REFERENCES dds.h_stories(story_id)
 );
 
-CREATE INDEX story_brief_is_active_idx ON dm.story_brief(story_id, language_code, is_active);
+CREATE INDEX story_briefs_is_active_idx ON dm.story_briefs(story_id, language_code, is_active);

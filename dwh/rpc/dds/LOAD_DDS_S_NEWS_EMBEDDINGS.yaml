@@ -115,7 +115,7 @@ output:
             count: 5
             period: 1s
 
-      - label: out_pg_t_news_stories
+      - label: out_pg_t_story_news
         sql_raw:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
@@ -135,7 +135,7 @@ output:
                 FROM story s
                 WHERE s.embedding_vct <=> $2::vector < 0.52
             )
-            INSERT INTO dds.t_news_stories (story_id, news_id, model_nm, published_dttm, distance_prt)
+            INSERT INTO dds.t_story_news (story_id, news_id, model_nm, published_dttm, distance_prt)
             SELECT
                 r.story_id,
                 xxh64($1),

@@ -26,7 +26,7 @@ pipeline:
                           'geoscale_nm', geoscale_nm,
                           'confidence_prt', confidence_prt,
                           'reason_txt', reason_txt)) AS description
-                  FROM bds.b_unews_stories_texts s
+                  FROM bds.b_story_unews_texts s
                   LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id
                   WHERE s.language_code = 'ru'
               ),
@@ -44,7 +44,7 @@ pipeline:
           FROM aggregated a
           WHERE NOT EXISTS (
               SELECT 1
-              FROM dm.stories_summaries_d s
+              FROM dm.story_summaries_d s
               WHERE s.story_id = a.story_id
                 AND s.dt = a.dt
                 AND s.language_code = a.language_code
@@ -122,12 +122,12 @@ pipeline:
                 message: '[🧠 LLM BACKFILL] story_id: ${! this.story_id } | dt: ${! this.dt } | Headline: ${! this.ai_response.headline_txt}'
 
 output:
-  label: reload_dm_stories_summaries_d
+  label: reload_dm_story_summaries_d
   sql_raw:
     driver: postgres
     dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
     query: |
-      INSERT INTO dm.stories_summaries_d (
+      INSERT INTO dm.story_summaries_d (
         story_id, dt, model_nm, language_code, headline_txt, summary_txt
       ) VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (story_id, dt, model_nm, language_code) DO NOTHING

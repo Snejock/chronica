@@ -1,5 +1,5 @@
-DROP VIEW IF EXISTS bds.b_forecasts_posteriors;
-CREATE OR REPLACE VIEW bds.b_forecasts_posteriors AS
+DROP VIEW IF EXISTS bds.b_forecast_posteriors;
+CREATE OR REPLACE VIEW bds.b_forecast_posteriors AS
 WITH RECURSIVE
     ordered_news AS (
         SELECT
@@ -18,7 +18,7 @@ WITH RECURSIVE
                 PARTITION BY n.forecast_id, f.language_code
                 ORDER BY n.published_dttm
             ) AS rn
-        FROM dds.t_news_forecasts n
+        FROM dds.t_forecast_news n
         JOIN dds.d_forecasts f
             ON f.forecast_id = n.forecast_id
     ),

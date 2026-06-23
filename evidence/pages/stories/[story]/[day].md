@@ -228,7 +228,7 @@ SELECT
     , title_txt
     , summary_txt
     , image_url
-FROM dwh_pg_1.b_news_stories_feeds
+FROM dwh_pg_1.b_story_feed_news
 WHERE story_id = ${params.story}
   AND CAST(published_dttm AS DATE) = '${params.day}'::date
 ORDER BY published_dttm DESC

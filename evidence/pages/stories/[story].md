@@ -558,7 +558,7 @@ WHERE story_id = ${params.story}
 
 ```sql q_story_brief
 SELECT brief_txt
-FROM dwh_pg_1.story_brief
+FROM dwh_pg_1.story_briefs
 WHERE story_id = ${params.story}
   AND language_code = 'ru'
   AND is_active = true
@@ -580,7 +580,7 @@ SELECT
     , strftime(dt, '%Y-%m-%d') AS iso_dt
     , headline_txt
     , summary_txt
-FROM dwh_pg_1.stories_summaries_d
+FROM dwh_pg_1.story_summaries_d
 WHERE language_code = 'ru'
   AND story_id = ${params.story}
 ORDER BY dt DESC
@@ -589,13 +589,13 @@ ORDER BY dt DESC
 ```sql q_forecasts
 WITH latest AS (
     SELECT forecast_id, MAX(published_dttm) AS dttm
-    FROM dwh_pg_1.b_forecasts_posteriors
+    FROM dwh_pg_1.b_forecast_posteriors
     WHERE language_code = 'ru' AND story_id = ${params.story}
     GROUP BY forecast_id
 ),
 prev AS (
     SELECT b.forecast_id, b.p_posterior_prt AS p_prev
-    FROM dwh_pg_1.b_forecasts_posteriors b
+    FROM dwh_pg_1.b_forecast_posteriors b
     JOIN latest l ON l.forecast_id = b.forecast_id
     WHERE b.language_code = 'ru'
       AND b.story_id = ${params.story}
@@ -609,7 +609,7 @@ SELECT
     CAST(ROUND(b.p_posterior_prt * 100) AS INTEGER) AS pct,
     ROUND((b.p_posterior_prt - COALESCE(p.p_prev, b.p_posterior_prt)) * 100, 1) AS delta_pp,
     b.forecast_txt
-FROM dwh_pg_1.b_forecasts_posteriors b
+FROM dwh_pg_1.b_forecast_posteriors b
 JOIN latest l ON l.forecast_id = b.forecast_id AND l.dttm = b.published_dttm
 LEFT JOIN prev p ON p.forecast_id = b.forecast_id
 WHERE b.language_code = 'ru' AND b.story_id = ${params.story}
@@ -618,7 +618,7 @@ ORDER BY b.p_posterior_prt DESC
 
 ```sql q_forecasts_history
 SELECT forecast_id, published_dttm, p_posterior_prt
-FROM dwh_pg_1.b_forecasts_posteriors
+FROM dwh_pg_1.b_forecast_posteriors
 WHERE language_code = 'ru' AND story_id = ${params.story}
 ORDER BY forecast_id, published_dttm
 ```
@@ -627,7 +627,7 @@ ORDER BY forecast_id, published_dttm
 SELECT
     CAST(published_dttm AS DATE) AS day,
     COUNT(*) AS cnt
-FROM dwh_pg_1.b_unews_stories_texts
+FROM dwh_pg_1.b_story_unews_texts
 WHERE story_id = ${params.story}
   AND published_dttm >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY 1
@@ -641,7 +641,7 @@ FROM (
         strftime(published_dttm, '%Y-%m-%d') AS day,
         image_url,
         ROW_NUMBER() OVER (PARTITION BY strftime(published_dttm, '%Y-%m-%d') ORDER BY published_dttm DESC) AS rn
-    FROM dwh_pg_1.b_news_stories_feeds
+    FROM dwh_pg_1.b_story_feed_news
     WHERE story_id = ${params.story}
       AND image_url IS NOT NULL
       AND image_url != ''

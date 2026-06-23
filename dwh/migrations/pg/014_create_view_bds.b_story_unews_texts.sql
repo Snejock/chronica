@@ -1,5 +1,5 @@
--- DROP VIEW IF EXISTS bds.b_unews_stories_texts;
-CREATE OR REPLACE VIEW bds.b_unews_stories_texts AS
+-- DROP VIEW IF EXISTS bds.b_story_unews_texts;
+CREATE OR REPLACE VIEW bds.b_story_unews_texts AS
 WITH
     storyline AS (
         SELECT story_id, embedding_vct
@@ -13,7 +13,7 @@ WITH
             , sl.embedding_vct <=> un.embedding_vct AS distance_prt
             , row_number() OVER (PARTITION BY sl.story_id, un.news_id, un.language_code
                                  ORDER BY sl.embedding_vct <=> un.embedding_vct) AS rn
-        FROM bds.b_news_unified un
+        FROM bds.b_unews un
         JOIN storyline sl ON un.embedding_vct <=> sl.embedding_vct < 0.52
     )
 SELECT

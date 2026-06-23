@@ -20,7 +20,7 @@ ranked AS (
         ON s.model_nm = ne.model_nm
        AND s.embedding_vct <=> ne.embedding_vct < 0.52
 )
-INSERT INTO dds.t_news_stories (story_id, news_id, model_nm, published_dttm, distance_prt)
+INSERT INTO dds.t_story_news (story_id, news_id, model_nm, published_dttm, distance_prt)
 SELECT story_id, news_id, model_nm, published_dttm, distance_prt
 FROM ranked
 WHERE rn = 1

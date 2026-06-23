@@ -6,4 +6,4 @@ SELECT
     , language_code
     , news_id
     , news_txt
-FROM bds.b_unews_stories_texts
+FROM bds.b_story_unews_texts
