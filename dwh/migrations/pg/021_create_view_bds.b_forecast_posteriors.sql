@@ -22,6 +22,7 @@ WITH RECURSIVE
         JOIN dds.d_forecasts f
             ON f.forecast_id = n.forecast_id
     ),
+    n_max AS (SELECT 15.0::numeric AS val),
     bayes AS (
         -- базовый случай: приор + первая новость
         SELECT
@@ -35,8 +36,8 @@ WITH RECURSIVE
             alpha_init,
             beta_init,
             rn,
-            alpha_init + p_confirm_prt * 3.0 AS alpha,
-            beta_init  + p_refute_prt  * 3.0 AS beta
+            alpha_init + greatest(p_confirm_prt - p_refute_prt, 0) * 3.0 AS alpha,
+            beta_init  + greatest(p_refute_prt - p_confirm_prt, 0) * 3.0 AS beta
         FROM ordered_news
         WHERE rn = 1
 
@@ -53,17 +54,41 @@ WITH RECURSIVE
             n.alpha_init,
             n.beta_init,
             n.rn,
-            -- накопленный сигнал затухает к приору, затем добавляется новая новость
-            n.alpha_init
-                + (b.alpha - n.alpha_init) * exp(
+            -- затухание + cap: ограничиваем effective_n перед добавлением сигнала
+            (SELECT
+                CASE WHEN a_dec + b_dec > nm.val
+                     THEN a_dec * nm.val / (a_dec + b_dec)
+                     ELSE a_dec
+                END + greatest(n.p_confirm_prt - n.p_refute_prt, 0) * 3.0
+             FROM n_max nm,
+             LATERAL (SELECT
+                n.alpha_init + (b.alpha - n.alpha_init) * exp(
                     -extract(EPOCH FROM (n.published_dttm - b.published_dttm))::numeric
                     / (3.0 * 86400) * ln(2.0)
-                ) + n.p_confirm_prt * 3.0 AS alpha,
-            n.beta_init
-                + (b.beta  - n.beta_init)  * exp(
+                ) AS a_dec,
+                n.beta_init + (b.beta - n.beta_init) * exp(
                     -extract(EPOCH FROM (n.published_dttm - b.published_dttm))::numeric
                     / (3.0 * 86400) * ln(2.0)
-                ) + n.p_refute_prt * 3.0 AS beta
+                ) AS b_dec
+             ) decayed
+            ) AS alpha,
+            (SELECT
+                CASE WHEN a_dec + b_dec > nm.val
+                     THEN b_dec * nm.val / (a_dec + b_dec)
+                     ELSE b_dec
+                END + greatest(n.p_refute_prt - n.p_confirm_prt, 0) * 3.0
+             FROM n_max nm,
+             LATERAL (SELECT
+                n.alpha_init + (b.alpha - n.alpha_init) * exp(
+                    -extract(EPOCH FROM (n.published_dttm - b.published_dttm))::numeric
+                    / (3.0 * 86400) * ln(2.0)
+                ) AS a_dec,
+                n.beta_init + (b.beta - n.beta_init) * exp(
+                    -extract(EPOCH FROM (n.published_dttm - b.published_dttm))::numeric
+                    / (3.0 * 86400) * ln(2.0)
+                ) AS b_dec
+             ) decayed
+            ) AS beta
         FROM ordered_news n
         JOIN bayes b
             ON  b.forecast_id   = n.forecast_id
