@@ -205,6 +205,21 @@ hide_breadcrumbs: true
   @media (prefers-reduced-motion: reduce) {
     .chronica-flag .cf-caret { animation: none; opacity: 1; }
   }
+  .chronica-btn {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: #F1EADB;
+    background: #C0401C;
+    padding: 10px 28px;
+    text-decoration: none;
+    transition: background 0.2s ease;
+  }
+  .chronica-btn:hover {
+    background: #a33618;
+  }
 </style>
 
 <div bind:this={pageEl}>
@@ -220,6 +235,8 @@ hide_breadcrumbs: true
   <p class="text-gray-400 text-xs leading-relaxed mt-16 max-w-lg text-center">
     Собираем материалы из открытых источников, группируем по темам и формируем ежедневные сводки — чтобы следить за событиями без лишнего шума.
   </p>
+
+  <a href="/stories" class="chronica-btn mt-10">Сюжеты →</a>
 
 </div>
 </div>
