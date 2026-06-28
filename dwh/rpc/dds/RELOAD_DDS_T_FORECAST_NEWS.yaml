@@ -1,6 +1,6 @@
 input:
   generate:
-    interval: "5m"
+    interval: "20m"
     mapping: 'root = {}'
 
 pipeline:
