@@ -1,0 +1,178 @@
+input:
+  generate:
+    interval: "1h"
+    mapping: 'root = {}'
+
+pipeline:
+  threads: 1
+  processors:
+    # удаление неактивных строк, у которых уже есть активная пара
+    - label: cleanup_inactive
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          DELETE FROM dm.story_key_events b
+          WHERE b.is_active = false
+            AND EXISTS (
+                SELECT 1 FROM dm.story_key_events a
+                WHERE a.story_id = b.story_id
+                  AND a.model_nm = b.model_nm
+                  AND a.language_code = b.language_code
+                  AND a.is_active = true
+            )
+
+    # деактивирование записей сюжетов без сводок за последние 5 дней
+    - label: deactivate_stale
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          UPDATE dm.story_key_events b
+          SET is_active = false, 
+              _loaded_dttm = now()
+          WHERE b.is_active = true
+            AND NOT EXISTS (
+                SELECT 1 FROM dm.story_summaries_d s
+                WHERE s.story_id = b.story_id
+                  AND s.language_code = b.language_code
+                  AND s.dt >= current_date - INTERVAL '4 day'
+            )
+
+    # выборка сюжетов: все заголовки за всё время (полная история для таймлайна)
+    - label: postgres
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          WITH recent AS (
+              SELECT DISTINCT story_id, language_code
+              FROM dm.story_summaries_d
+              WHERE language_code = 'ru'
+                AND dt >= current_date - INTERVAL '4 day'
+          )
+          SELECT
+              all_d.story_id,
+              min(sd.story_nm)        AS story_nm,
+              all_d.language_code,
+              min(all_d.dt)           AS coverage_from_dt,
+              max(all_d.dt)           AS coverage_to_dt,
+              jsonb_agg(jsonb_build_object(
+                'dt',          all_d.dt,
+                'headline_txt', all_d.headline_txt
+              ) ORDER BY all_d.dt)    AS headlines_json
+          FROM dm.story_summaries_d all_d
+          JOIN recent r ON r.story_id = all_d.story_id
+              AND r.language_code = all_d.language_code
+          LEFT JOIN dds.s_story_details sd ON sd.story_id = all_d.story_id
+              AND sd.language_code = all_d.language_code
+          GROUP BY all_d.story_id, all_d.language_code
+
+    # разворот батча
+    - mapping: |
+        root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
+
+    - unarchive:
+        format: json_array
+
+    # вызов LLM
+    - branch:
+        request_map: |
+          let system_instruction = """
+            Ты — редактор новостного издания. Тебе дан список ежедневных заголовков событий в рамках одного новостного сюжета.
+            Твоя задача — составить таймлайн из ключевых переломных моментов, которые определили ход сюжета.
+            Для каждого события укажи точную дату (YYYY-MM-DD) и краткую метку на русском языке (3–7 слов).
+            Метка должна звучать как лаконичный новостной заголовок: "Иран закрывает пролив", "США начинают переговоры", "Перемирие вступает в силу".
+            Не используй длинные предложения. Не дублируй события. Выбирай только действительно значимые вехи.
+            Верни строго JSON-объект с единственным ключом events — массив объектов {dt, event_nm}.
+          """
+
+          let prompt_text = """
+            Сюжет: """ + this.story_nm.string().or("Unknown") + """
+            Период: """ + this.coverage_from_dt.string() + """ — """ + this.coverage_to_dt.string() + """
+
+            Ежедневные заголовки:
+            """ + this.headlines_json.string() + """
+
+            Ответ (только JSON, без пояснений):
+          """
+
+          root = {
+            "model": "deepseek-v4-flash",
+            "stream": false,
+            "temperature": 0.4,
+            "top_p": 0.9,
+            "response_format": { "type": "json_object" },
+            "messages": [
+              { "role": "system", "content": $system_instruction },
+              { "role": "user",   "content": $prompt_text }
+            ]
+          }
+        processors:
+          - label: http
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
+          - mapping: |
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
+              root.ai_response = if $result != null && $result.events.type() == "array" { $result } else { null }
+        result_map: |
+          root.ai_response = this.ai_response
+
+    # логирование
+    - switch:
+        - check: 'this.ai_response != null'
+          processors:
+            - log:
+                level: INFO
+                message: '[🧠 LLM KEY EVENTS] story_id: ${! this.story_id } | events: ${! this.ai_response.events.length() }'
+
+output:
+  label: load_dm_story_key_events
+  sql_raw:
+    driver: postgres
+    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    query: |
+      INSERT INTO dm.story_key_events (
+          story_id, model_nm, language_code, is_active,
+          events_json, coverage_from_dt, coverage_to_dt
+      ) VALUES ($1, $2, $3, true, $4::jsonb, $5, $6)
+      ON CONFLICT (story_id, model_nm, language_code, is_active) DO UPDATE SET
+        _loaded_dttm     = now(),
+        events_json      = EXCLUDED.events_json,
+        coverage_from_dt = EXCLUDED.coverage_from_dt,
+        coverage_to_dt   = EXCLUDED.coverage_to_dt
+    args_mapping: |
+      root = [
+        this.story_id,
+        "deepseek-v4-flash:cloud",
+        this.language_code,
+        this.events_json,
+        this.coverage_from_dt,
+        this.coverage_to_dt
+      ]
+    batching:
+      count: 10
+      period: 1s
+
+  processors:
+    - mapping: |
+        root = if this.ai_response == null { deleted() } else { this }
+    - mapping: |
+        root = {
+          "story_id":         this.story_id.number(),
+          "language_code":    this.language_code.string(),
+          "events_json":      this.ai_response.events.string(),
+          "coverage_from_dt": this.coverage_from_dt,
+          "coverage_to_dt":   this.coverage_to_dt
+        }

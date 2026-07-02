@@ -6,7 +6,7 @@ hide_breadcrumbs: true
 <script>
   import { getContext as _getCtx } from 'svelte';
   import { goto } from '$app/navigation';
-  import { slide } from 'svelte/transition';
+  import { slide, draw } from 'svelte/transition';
   const breadcrumb = _getCtx('breadcrumb');
   $: if (q_story?.[0]?.story_nm) breadcrumb?.set({ storyName: q_story[0].story_nm });
 
@@ -116,9 +116,24 @@ hide_breadcrumbs: true
   let slidForecastId = null;
   let openInfoId = null;
   let openChartId = null;
+  let openEventId = null;
 
   $: visible = q_stories_summaries.slice(0, shown);
   $: hasMore = shown < q_stories_summaries.length;
+
+  // Горизонтальный таймлайн ключевых событий: 4 уровня высоты, равномерный шаг
+  // level 0=above-far, 1=below-far, 2=above-close, 3=below-close
+  // Трек: height=280px, center=140px, dot=11px
+  const KE_SIDE_PAD    = 100;
+  const KE_GAP         = 165;
+  $: keyEventLayout = (() => {
+    if (!q_key_events || q_key_events.length === 0) return { trackW: 0, items: [] };
+    const trackW = Math.max(400, q_key_events.length * KE_GAP + KE_SIDE_PAD * 2);
+    const items  = q_key_events.map((ev, i) => ({
+      ...ev, id: i, x: KE_SIDE_PAD + i * KE_GAP, above: i % 2 === 0,
+    }));
+    return { trackW, items };
+  })();
 
   let hovered = {};
 
@@ -395,6 +410,12 @@ hide_breadcrumbs: true
     };
   }
 
+  // Прокрутка к правому краю (последние события) при монтировании
+  function autoScrollRight(node) {
+    const t = setTimeout(() => { node.scrollLeft = node.scrollWidth; }, 60);
+    return { destroy() { clearTimeout(t); } };
+  }
+
   let chronicleEl;
   let slideGrayscale = { 0: 0 };
 
@@ -520,13 +541,14 @@ hide_breadcrumbs: true
 </script>
 
 <style>
-  .forecast-carousel, .chronicle-carousel {
+  .forecast-carousel, .chronicle-carousel, .key-events-track {
     cursor: grab;
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
   .forecast-carousel::-webkit-scrollbar,
-  .chronicle-carousel::-webkit-scrollbar {
+  .chronicle-carousel::-webkit-scrollbar,
+  .key-events-track::-webkit-scrollbar {
     display: none;
   }
   .chronicle-carousel {
@@ -546,6 +568,31 @@ hide_breadcrumbs: true
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+
+  /* --- Key events: metro-карта --- */
+  .ke-rail {
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(to right, #C4162A 0%, #FF9830 50%, #FADE2A 100%);
+  }
+  .ke-tag {
+    transition: color 0.2s, transform 0.2s;
+  }
+  @media (hover: hover) {
+    .ke-tag:hover {
+      color: #15140F !important;
+      transform: translateY(-2px);
+    }
+  }
+  .ke-fade-l, .ke-fade-r {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 44px;
+    pointer-events: none;
+    z-index: 4;
+  }
+  .ke-fade-l { left:  0; background: linear-gradient(to right,  #faf9f7, transparent); }
+  .ke-fade-r { right: 0; background: linear-gradient(to left, #faf9f7, transparent); }
 
 </style>
 
@@ -583,6 +630,33 @@ SELECT
 FROM dwh_pg_1.story_summaries_d
 WHERE language_code = 'ru'
   AND story_id = ${params.story}
+ORDER BY dt DESC
+```
+
+```sql q_key_events
+SELECT
+    dt
+    , event_nm
+    , strftime(dt, '%Y-%m-%d') AS iso_dt
+    , strftime(dt, '%d') || ' ' ||
+      CASE extract(month FROM dt)
+        WHEN 1  THEN 'января'   WHEN 2  THEN 'февраля'
+        WHEN 3  THEN 'марта'    WHEN 4  THEN 'апреля'
+        WHEN 5  THEN 'мая'      WHEN 6  THEN 'июня'
+        WHEN 7  THEN 'июля'     WHEN 8  THEN 'августа'
+        WHEN 9  THEN 'сентября' WHEN 10 THEN 'октября'
+        WHEN 11 THEN 'ноября'   WHEN 12 THEN 'декабря'
+      END AS formatted_dt
+    , strftime(dt, '%d') || ' ' ||
+      CASE extract(month FROM dt)
+        WHEN 1  THEN 'янв'  WHEN 2  THEN 'фев'  WHEN 3  THEN 'мар'
+        WHEN 4  THEN 'апр'  WHEN 5  THEN 'май'  WHEN 6  THEN 'июн'
+        WHEN 7  THEN 'июл'  WHEN 8  THEN 'авг'  WHEN 9  THEN 'сен'
+        WHEN 10 THEN 'окт'  WHEN 11 THEN 'ноя'  WHEN 12 THEN 'дек'
+      END AS short_dt
+FROM dwh_pg_1.story_key_events
+WHERE story_id = ${params.story}
+  AND language_code = 'ru'
 ORDER BY dt DESC
 ```
 
@@ -658,6 +732,82 @@ ORDER BY day
 
 {#if q_story_brief.length > 0}
 <p class="text-sm leading-relaxed" style="color:#57534e; margin-bottom:24px">{q_story_brief[0].brief_txt}</p>
+{/if}
+
+## Ключевые события
+
+{#if keyEventLayout.items.length > 0}
+<div class="not-prose mt-2 mb-8" style="position:relative; margin-left:-12px; margin-right:-12px"
+     on:click={() => { openEventId = null; }}>
+  <!-- Fade-маски по краям — намёк на прокрутку -->
+  <div class="ke-fade-l"></div>
+  <div class="ke-fade-r"></div>
+
+  <div class="key-events-track" use:dragScroll
+       style="overflow-x:auto; overscroll-behavior-x:contain; padding-bottom:4px">
+    <div style="position:relative; width:{keyEventLayout.trackW}px; height:300px; min-width:100%">
+
+
+      <!-- Градиентная дорога (ось) -->
+      <div class="ke-rail" style="position:absolute; top:50%; left:0; right:0; transform:translateY(-50%); z-index:1"></div>
+
+      <!-- SVG: постоянные серые leader-линии + красная акцентная при выборе -->
+      <svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2">
+        {#each keyEventLayout.items as ev}
+          {@const y1 = ev.above ? 145 : 155}
+          {@const y2 = ev.above ? 100 : 200}
+          <line x1={ev.x} y1={y1} x2={ev.x} y2={y2} stroke="#e7e5e4" stroke-width="1"/>
+        {/each}
+      </svg>
+
+      {#each keyEventLayout.items as ev}
+        {@const _isOpen = openEventId === ev.id}
+        {@const _isFresh = ev.id === 0}
+
+        <!-- Дата под точкой -->
+        <div style="position:absolute; top:calc(50% + 9px); left:{ev.x}px; transform:translateX(-50%); text-align:center; pointer-events:none; z-index:3">
+          <span style="font-size:11px; font-weight:500; color:{_isOpen ? '#15140F' : '#78716c'}; letter-spacing:0.03em; transition:color 0.2s; white-space:nowrap">{ev.short_dt}</span>
+        </div>
+
+        <!-- Станция-точка: метро-стиль (белая с кольцом, тенью, гало при выборе) -->
+        <div style="position:absolute; top:50%; left:{ev.x}px; width:11px; height:11px; transform:translate(-50%,-50%); z-index:3; cursor:pointer"
+             use:tappable on:tap={() => { openEventId = _isOpen ? null : ev.id; }} on:click|stopPropagation>
+          <div style="position:absolute; inset:0; border-radius:50%;
+                      background:{_isOpen ? '#C4162A' : '#ffffff'};
+                      border:2.5px solid {_isOpen ? 'rgba(196,22,42,0.3)' : _isFresh ? '#C4162A' : '#c4bca9'};
+                      box-shadow:{_isOpen
+                        ? '0 0 0 4px rgba(196,22,42,0.12), 0 2px 6px rgba(0,0,0,0.18)'
+                        : '0 1px 4px rgba(0,0,0,0.14)'};
+                      transition:all 0.2s ease;
+                      transform:scale({_isOpen ? 1.45 : 1})"></div>
+        </div>
+
+        <!-- Тег: выше или ниже оси, рамка появляется при выборе -->
+        {#if ev.above}
+          <div style="position:absolute; left:{ev.x}px; bottom:calc(50% + 50px); width:150px; transform:translateX(-50%); cursor:pointer; z-index:{_isOpen ? 4 : 1}; text-align:center"
+               use:tappable on:tap={() => { _isOpen ? goto(`/stories/${params.story}/${ev.iso_dt}`) : (openEventId = ev.id); }} on:click|stopPropagation>
+            <div style="border-radius:12px; border:1px solid {_isOpen ? '#e7e5e4' : 'transparent'}; padding:5px 8px; background:{_isOpen ? '#faf9f7' : 'transparent'}; transition:border-color 0.2s, background 0.2s">
+              <p class="ke-tag" style="font-size:14px; font-weight:400; color:#57534e; margin:0; line-height:1.35; transition:transform 0.2s">{ev.event_nm}</p>
+            </div>
+          </div>
+        {:else}
+          <div style="position:absolute; left:{ev.x}px; top:calc(50% + 50px); width:150px; transform:translateX(-50%); cursor:pointer; z-index:{_isOpen ? 4 : 1}; text-align:center"
+               use:tappable on:tap={() => { _isOpen ? goto(`/stories/${params.story}/${ev.iso_dt}`) : (openEventId = ev.id); }} on:click|stopPropagation>
+            <div style="border-radius:12px; border:1px solid {_isOpen ? '#e7e5e4' : 'transparent'}; padding:5px 8px; background:{_isOpen ? '#faf9f7' : 'transparent'}; transition:border-color 0.2s, background 0.2s">
+              <p class="ke-tag" style="font-size:14px; font-weight:400; color:#57534e; margin:0; line-height:1.35; transition:transform 0.2s">{ev.event_nm}</p>
+            </div>
+          </div>
+        {/if}
+
+      {/each}
+    </div>
+  </div>
+
+</div>
+{:else}
+<div class="not-prose mt-4 p-5 rounded-xl border" style="background:#faf9f7; border-color:#e7e5e4">
+  <p class="text-sm" style="color:#a8a29e">Ключевые события ещё не определены.</p>
+</div>
 {/if}
 
 ## Хроника событий
