@@ -135,6 +135,14 @@ hide_breadcrumbs: true
     return { trackW, items };
   })();
 
+  // Рябь на тапе по станции
+  let rippleEventId = null;
+  let rippleSeq = 0;
+  function pingRipple(id) {
+    rippleEventId = id;
+    rippleSeq += 1;
+  }
+
   let hovered = {};
 
   let truncated  = {};
@@ -594,6 +602,19 @@ hide_breadcrumbs: true
   .ke-fade-l { left:  0; background: linear-gradient(to right,  #faf9f7, transparent); }
   .ke-fade-r { right: 0; background: linear-gradient(to left, #faf9f7, transparent); }
 
+  @keyframes ke-ripple {
+    from { transform: scale(0.6); opacity: 0.65; }
+    to   { transform: scale(3.4); opacity: 0; }
+  }
+  .ke-ripple {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid #C4162A;
+    animation: ke-ripple 0.55s ease-out forwards;
+    pointer-events: none;
+  }
+
 </style>
 
 ```sql q_story
@@ -771,14 +792,19 @@ ORDER BY day
 
         <!-- Станция-точка: метро-стиль (белая с кольцом, тенью, гало при выборе) -->
         <div style="position:absolute; top:50%; left:{ev.x}px; width:11px; height:11px; transform:translate(-50%,-50%); z-index:3; cursor:pointer"
-             use:tappable on:tap={() => { openEventId = _isOpen ? null : ev.id; }} on:click|stopPropagation>
+             use:tappable on:tap={() => { openEventId = _isOpen ? null : ev.id; pingRipple(ev.id); }} on:click|stopPropagation>
+          {#if rippleEventId === ev.id}
+            {#key rippleSeq}
+              <div class="ke-ripple" on:animationend={() => { if (rippleEventId === ev.id) rippleEventId = null; }}></div>
+            {/key}
+          {/if}
           <div style="position:absolute; inset:0; border-radius:50%;
                       background:{_isOpen ? '#C4162A' : '#ffffff'};
                       border:2.5px solid {_isOpen ? 'rgba(196,22,42,0.3)' : _isFresh ? '#C4162A' : '#c4bca9'};
                       box-shadow:{_isOpen
                         ? '0 0 0 4px rgba(196,22,42,0.12), 0 2px 6px rgba(0,0,0,0.18)'
                         : '0 1px 4px rgba(0,0,0,0.14)'};
-                      transition:all 0.2s ease;
+                      transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1), background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
                       transform:scale({_isOpen ? 1.45 : 1})"></div>
         </div>
 
@@ -828,7 +854,7 @@ ORDER BY day
 
         <!-- Дата -->
         <div style="padding:10px 0 6px 12px">
-          <span style="font-size:12px; font-weight:500; color:#a8a29e">{_day} {_mon}{_year !== new Date().getFullYear() ? ' ' + _year : ''}</span>
+          <span style="display:inline-block; font-size:11px; font-weight:600; color:#faf9f7; background:#57534e; padding:3px 8px; border-radius:6px; letter-spacing:0.01em; white-space:nowrap">{_day} {_mon}{_year !== new Date().getFullYear() ? ' ' + _year : ''}</span>
         </div>
 
         <!-- Карточка -->
