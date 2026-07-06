@@ -8,7 +8,7 @@
 RSS-источники → rss-fetcher ──┐
                                ├──→ Redpanda ──→ Redpanda Connect → PostgreSQL → Evidence.dev
 MOEX → moex-fetcher ──────────┘                                          ↑
-                                  ↑                                   Ollama (LLM)
+                                  ↑                          DeepSeek (cloud LLM) / Ollama (embeddings)
                                Redis (кэш)         ClickHouse ←── moex-fetcher
 ```
 
@@ -40,7 +40,10 @@ MOEX → moex-fetcher ──────────┘                         
 | **Redpanda Console** | Web UI для управления топиками · `http://localhost:38088` |
 | **Redis** | LRU-кэш без персистентности (512 МБ, `allkeys-lru`) |
 | **RedisInsight** | Web UI для Redis · `http://localhost:35540` |
-| **Ollama** | Локальный запуск LLM для генерации сводок |
+| **Ollama** | Локальный запуск LLM для генерации эмбеддингов новостей |
+| **DeepSeek** | Облачный LLM API (`deepseek-v4-flash`) для генерации сводок, брифов и реакций на новости — вызывается из процессоров Redpanda Connect (`dwh/rpc/dds/`, `dwh/rpc/dm/`) |
+| **dbt** | Трансформации данных поверх DWH |
+| **MinIO** | S3-совместимое объектное хранилище |
 
 ### Дашборд (`/evidence`)
 
@@ -58,7 +61,7 @@ Pydantic-модели, конфигурации и утилиты, раздел�
 - **Python** 3.14+ · [uv](https://github.com/astral-sh/uv)
 - **БД**: PostgreSQL, ClickHouse, Redis (LRU-кэш)
 - **Брокер**: Redpanda + Redpanda Connect
-- **LLM**: Ollama
+- **LLM**: DeepSeek (cloud API, сводки/брифы/реакции) · Ollama (локальные эмбеддинги)
 - **Дашборд**: Evidence.dev (SvelteKit)
 - **Инфраструктура**: Docker Compose
 
@@ -91,7 +94,7 @@ cd evidence/compose && docker compose up chr-evidence-prod
 ## Конфигурация
 
 - RSS-источники: `services/rss-fetcher/config/rss_feeds.yaml`
-- MOEX (тикеры, расписание): `services/moex_fetcher/config/config.yaml`
+- MOEX (тикеры, расписание): `services/moex_fetcher/config/config.yml`
 - Переменные окружения: `common/.env.server`
 - Миграции PostgreSQL: `dwh/migrations/pg/`
 - Миграции ClickHouse: `dwh/migrations/ch/`
