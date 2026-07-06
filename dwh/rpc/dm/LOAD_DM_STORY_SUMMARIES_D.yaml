@@ -13,21 +13,28 @@ pipeline:
           WITH
               news AS (
                 SELECT
-                    story_id,
-                    story_nm,
-                    (published_dttm AT TIME ZONE 'UTC')::date AS dt,
+                    s.story_id,
+                    s.story_nm,
+                    s.published_dttm,
+                    (s.published_dttm AT TIME ZONE 'UTC')::date AS dt,
                     s.language_code,
                     jsonb_strip_nulls(jsonb_build_object(
-                        'story_nm', story_nm,
-                        'news_txt', news_txt,
-                        'reach_idx', reach_idx,
-                        'impact_scr', impact_scr,
-                        'duration_days', duration_days,
-                        'geoscale_nm', geoscale_nm,
-                        'confidence_prt', confidence_prt,
-                        'reason_txt', reason_txt)) AS description
+                        'story_nm', s.story_nm,
+                        'news_txt', s.news_txt,
+                        'reach_idx', r.reach_idx,
+                        'impact_scr', r.impact_scr,
+                        'duration_days', r.duration_days,
+                        'geoscale_nm', r.geoscale_nm,
+                        'confidence_prt', r.confidence_prt,
+                        'reason_txt', r.reason_txt)) AS description
                 FROM bds.b_story_unews_texts s
-                LEFT JOIN dds.s_news_reactions r ON s.news_id = r.news_id
+                LEFT JOIN LATERAL (
+                    SELECT *
+                    FROM dds.s_news_reactions
+                    WHERE news_id = s.news_id
+                    ORDER BY _loaded_dttm DESC
+                    LIMIT 1
+                ) r ON true
                 WHERE s.language_code = 'ru'
                   AND (s.published_dttm AT TIME ZONE 'UTC')::date >= CASE
                         WHEN EXTRACT(HOUR FROM now() AT TIME ZONE 'UTC') < 3
@@ -35,15 +42,31 @@ pipeline:
                         ELSE current_date
                       END
                   AND (s.published_dttm AT TIME ZONE 'UTC')::date <= current_date
+              ),
+              agg AS (
+                SELECT
+                    story_id
+                    , min(story_nm) AS story_nm
+                    , dt
+                    , language_code
+                    , jsonb_agg(description ORDER BY published_dttm) AS descriptions
+                    , max(published_dttm) AS latest_news_dttm
+                FROM news
+                GROUP BY story_id, dt, language_code
               )
           SELECT
-            story_id
-            , min(story_nm) AS story_nm
-            , dt
-            , language_code
-            , jsonb_agg(description) AS descriptions
-          FROM news
-          GROUP BY story_id, dt, language_code
+              a.story_id
+              , a.story_nm
+              , a.dt
+              , a.language_code
+              , a.descriptions
+          FROM agg a
+          LEFT JOIN dm.story_summaries_d d
+                 ON d.story_id = a.story_id
+                AND d.dt = a.dt
+                AND d.language_code = a.language_code
+                AND d.model_nm = 'deepseek-v4-flash:cloud'
+          WHERE d.story_id IS NULL OR a.latest_news_dttm > d._loaded_dttm
 
     - mapping: |
         root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
@@ -117,45 +140,41 @@ pipeline:
 
 output:
   label: load_dm_story_summaries_d
-  broker:
-    pattern: fan_out
-    outputs:
-      - label: out_postgres
-        sql_raw:
-          driver: postgres
-          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-          query: |
-            INSERT INTO dm.story_summaries_d (
-              story_id, dt, model_nm, language_code, headline_txt, summary_txt
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (story_id, dt, model_nm, language_code) DO UPDATE SET
-              _loaded_dttm = now(),
-              headline_txt = EXCLUDED.headline_txt,
-              summary_txt = EXCLUDED.summary_txt
-          args_mapping: |
-            root = [
-              this.story_id,
-              this.dt,
-              "deepseek-v4-flash:cloud",
-              this.language_code,
-              this.headline_txt,
-              this.summary_txt
-            ]
-          batching:
-            count: 10
-            period: 1s
+  sql_raw:
+    driver: postgres
+    dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+    query: |
+      INSERT INTO dm.story_summaries_d (
+        story_id, dt, model_nm, language_code, headline_txt, summary_txt
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (story_id, dt, model_nm, language_code) DO UPDATE SET
+        _loaded_dttm = now(),
+        headline_txt = EXCLUDED.headline_txt,
+        summary_txt = EXCLUDED.summary_txt
+    args_mapping: |
+      root = [
+        this.story_id,
+        this.dt,
+        "deepseek-v4-flash:cloud",
+        this.language_code,
+        this.headline_txt,
+        this.summary_txt
+      ]
+    batching:
+      count: 10
+      period: 1s
 
-        processors:
-          - mapping: |
-              root = if this.ai_response == null || this.ai_response == ""{ deleted() } else { this }
-          - mapping: |
-              let model = "deepseek-v4-flash:cloud"
+  processors:
+    - mapping: |
+        root = if this.ai_response == null || this.ai_response == ""{ deleted() } else { this }
+    - mapping: |
+        let model = "deepseek-v4-flash:cloud"
 
-              root = {
-                "story_id": this.story_id.number(),
-                "dt": this.dt,
-                "language_code": this.language_code.string(),
-                "headline_txt": this.ai_response.headline_txt.string(),
-                "summary_txt": this.ai_response.summary_txt.string(),
-                "model_nm": $model
-              }
+        root = {
+          "story_id": this.story_id.number(),
+          "dt": this.dt,
+          "language_code": this.language_code.string(),
+          "headline_txt": this.ai_response.headline_txt.string(),
+          "summary_txt": this.ai_response.summary_txt.string(),
+          "model_nm": $model
+        }
