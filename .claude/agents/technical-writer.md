@@ -16,7 +16,7 @@ Chronica has no single `compose/` directory or `prometheus.yml` — infra is spl
 
 Config files referenced from README's "Конфигурация" section:
 - `services/rss-fetcher/config/rss_feeds.yaml`, `services/moex_fetcher/config/config.yaml`
-- `common/.env.server` (env vars)
+- `.env` (env vars; single active config, `.env.local` is an inert dev-values copy)
 - `dwh/migrations/pg/`, `dwh/migrations/ch/` (migrations)
 
 ## What to check

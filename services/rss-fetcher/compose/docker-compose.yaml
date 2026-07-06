@@ -8,7 +8,7 @@ services:
       network: host
     container_name: chr-rss-fetcher
     env_file:
-      - path: ../../../common/.env.server
+      - path: ../../../.env
         required: true
     restart: unless-stopped
     networks:

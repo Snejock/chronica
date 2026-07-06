@@ -7,7 +7,7 @@ services:
       dockerfile: services/moex_fetcher/compose/Dockerfile
     container_name: chr-moex-fetcher
     env_file:
-      - path: ../../../common/.env.server
+      - path: ../../../.env
         required: true
     restart: unless-stopped
     networks:

@@ -4,7 +4,7 @@ from typing import Annotated
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-ENV_PATH = BASE_DIR / "common" / ".env"
+ENV_PATH = BASE_DIR / ".env"
 
 
 class RSSFetcherConfig(BaseModel):

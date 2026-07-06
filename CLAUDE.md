@@ -123,8 +123,12 @@ reading from the `bds`/`dm` layers. Pages live under `evidence/pages/*.md`. Dev 
 
 - Bring up infra: `docker compose up -d` from repo root (the root compose file is just an
   `include:` list; network is `dwh-net`).
-- Env: `common/.env.server` for services; root `.env` holds nested-style settings keys
-  (`POSTGRES__*`, `CLICKHOUSE__*`, `BROKER__*`, `DEEPSEEK__API_KEY`, `GOOGLE_AI__API_KEY`).
+- Env: a single root `.env` is the only active config, read by everything — Compose
+  interpolation (`${...}` in `dwh/compose/*`), every service's `env_file:` (`services/*/compose/`,
+  `evidence/compose/`), and the shared pydantic `Config` (`common/models/Config.py`). Nested-style
+  keys (`POSTGRES__*`, `CLICKHOUSE__*`, `BROKER__*`, `DEEPSEEK__API_KEY`, `GOOGLE_AI__API_KEY`).
+  Root `.env.local` is an inert copy of local-dev values (external `loki` addresses/ports) —
+  nothing reads it automatically; to develop from a laptop, manually copy it over `.env`.
 - CI/CD: `.github/workflows/deploy.yaml` — push to `master` triggers an SSH step that runs
   `git fetch origin master && git reset --hard origin/master` on the `loki` host. Pull-based,
   no build/test step in CI.
