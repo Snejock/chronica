@@ -1,5 +1,5 @@
 ---
-name: pg-queries
+name: query-postgres
 description: Query the Chronica Postgres DB (core) on loki. Use whenever the user asks to read/inspect data or schema in Postgres — run a SELECT, count rows, check a table's columns, verify a migration landed, or debug a pipeline's output. Read-only.
 ---
 
