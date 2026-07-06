@@ -6,7 +6,7 @@ input:
 pipeline:
   threads: 1
   processors:
-    # 1a. Удалить «зависшие» неактивные строки, у которых уже есть активная пара
+    # удаление зависших неактивных строк, у которых уже есть активная пара
     - label: cleanup_inactive
       sql_raw:
         driver: postgres
@@ -22,7 +22,7 @@ pipeline:
                   AND a.is_active = true
             )
 
-    # 1b. Деактивировать брифы сюжетов без сводок за последние 5 дней
+    # деактивировать брифы сюжетов без сводок за последние 7 дней
     - label: deactivate_stale
       sql_raw:
         driver: postgres
@@ -35,10 +35,10 @@ pipeline:
                 SELECT 1 FROM dm.story_summaries_d s
                 WHERE s.story_id = b.story_id
                   AND s.language_code = b.language_code
-                  AND s.dt >= current_date - INTERVAL '4 day'
+                  AND s.dt >= current_date - INTERVAL '6 day'
             )
 
-    # 2. Выборка сюжетов со сводками за последние 5 дней
+    # выбор сюжетов со сводками за последние 7 дней
     - label: postgres
       sql_raw:
         driver: postgres
@@ -48,7 +48,7 @@ pipeline:
               SELECT story_id, language_code, dt, headline_txt, summary_txt
               FROM dm.story_summaries_d
               WHERE language_code = 'ru'
-                AND dt >= current_date - INTERVAL '4 day'
+                AND dt >= current_date - INTERVAL '6 day'
           )
           SELECT
               r.story_id,
@@ -66,22 +66,26 @@ pipeline:
                  ON d.story_id = r.story_id AND d.language_code = r.language_code
           GROUP BY r.story_id, r.language_code
 
-    # 3. Guard + разворот батча
+    # guard + разворот батча
     - mapping: |
         root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
 
     - unarchive:
         format: json_array
 
-    # 4. Вызов LLM
+    # вызов LLM
     - branch:
         request_map: |
           let system_instruction = """
             You are a professional journalist and analyst.
-            You are given daily summaries of a single news story over several days.
+            You are given daily summaries of a single news story, ordered chronologically.
             Your task is to produce two texts:
             1. lead_txt — a short, punchy newspaper-style headline (3-8 words). It must be strictly objective and unbiased: state the fact, not an opinion. No clickbait, no emotional coloring, no evaluative adjectives. Think Reuters/AP headline style.
-            2. brief_txt — a coherent analytical paragraph (4-6 sentences) summarizing the key developments over the covered period. Highlight the most significant events, turning points, and the overall trajectory of the story. Write in a professional, analytical tone.
+            2. brief_txt — a coherent paragraph (4-6 sentences) that summarizes the CURRENT STATE of the story: what is happening now and where things stand. This is a status summary for a reader catching up, not a chronological recap.
+               - Lead with the latest and most important development, not with how much time has passed.
+               - Never open with, or otherwise mention, the time span covered (e.g. "За N дней...", "В течение недели...", "На протяжении..."). The reader does not need to know how many days are summarized.
+               - Mention earlier events only as brief context for the current state, not as a day-by-day account.
+               Write in a professional, analytical tone.
 
             Return strictly a JSON object with fields lead_txt and brief_txt.
             Respond in Russian language only.
@@ -89,9 +93,9 @@ pipeline:
 
           let prompt_text = """
             Story: """ + this.story_nm.string().or("Unknown") + """
-            Coverage period: """ + this.coverage_from_dt.string() + """ — """ + this.coverage_to_dt.string() + """
+            Last updated: """ + this.coverage_to_dt.string() + """
 
-            Daily summaries:
+            Daily summaries (chronological):
             """ + this.days.string() + """
 
             Your response (JSON only, no explanations):
@@ -129,7 +133,7 @@ pipeline:
         result_map: |
           root.ai_response = this.ai_response
 
-    # 5. Логирование
+    # логирование
     - switch:
         - check: 'this.ai_response != null'
           processors:
