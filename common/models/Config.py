@@ -44,6 +44,9 @@ class ProxyConfig(BaseModel):
     user: str
     password: str
 
+class TelegramConfig(BaseModel):
+    bot_token: str
+
 class Config(BaseSettings):
     broker: Annotated[BrokerConfig | None, Field(default=None)]
     clickhouse: Annotated[ClickhouseConfig | None, Field(default=None)]
@@ -51,6 +54,7 @@ class Config(BaseSettings):
     google_ai: Annotated[GoogleAIConfig | None, Field(default=None)]
     proxy: Annotated[ProxyConfig | None, Field(default=None)]
     rss_fetcher: Annotated[RSSFetcherConfig | None, Field(default=RSSFetcherConfig())]
+    telegram: Annotated[TelegramConfig | None, Field(default=None)]
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
