@@ -27,7 +27,7 @@ pipeline:
               , coalesce(nt.summary_txt, '')   AS summary_txt
               , coalesce(fn.image_url, '')     AS image_url
               , s.language_code
-          FROM dds.t_story_subscriptions s
+          FROM dds.l_story_tg_subs s
           JOIN LATERAL (
               SELECT DISTINCT ON (news_id) story_id, news_id, news_link, image_url, published_dttm
               FROM bds.b_story_feed_news
