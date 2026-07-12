@@ -1,0 +1,32 @@
+name: chronica
+
+services:
+  chr-tg-sender:
+    build:
+      context: ../../../
+      dockerfile: services/tg-sender/compose/Dockerfile
+      network: host
+    container_name: chr-tg-sender
+    env_file:
+      - path: ../../../.env
+        required: true
+    restart: unless-stopped
+    networks:
+      - dwh-net
+    volumes:
+      - ../log:/app/services/tg-sender/log
+    environment:
+      - TZ=Europe/Moscow
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    init: true
+    command: ["python", "tg-sender.py"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dwh-net:
+    external: true

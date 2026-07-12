@@ -3,6 +3,7 @@ name: chronica
 include:
   - services/rss-fetcher/compose/docker-compose.yaml
   - services/moex_fetcher/compose/docker-compose.yaml
+  - services/tg-sender/compose/docker-compose.yaml
   - dwh/compose/clickhouse/docker-compose.yaml
   - dwh/compose/postgres/docker-compose.yaml
   - dwh/compose/redis/docker-compose.yaml

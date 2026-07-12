@@ -1,0 +1,111 @@
+# NOTE on naming: this pipeline deliberately breaks the {LOAD|RELOAD}_{SCHEMA}_{TABLE}
+# convention — its output is a Redpanda topic (tg_story_news) plus a Postgres dedup
+# marker table (dds.t_story_news_sent), not a single target table.
+
+input:
+  generate:
+    interval: "1m"
+    mapping: 'root = {}'
+
+pipeline:
+  processors:
+    # candidate news items for active subscriptions, not yet sent to the subscriber.
+    # DISTINCT ON collapses duplicate rows caused by multiple model_nm values on
+    # dds.t_story_news / dds.s_news_texts (both keyed by model_nm).
+    - label: postgres
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          SELECT
+              s.chat_id
+              , fn.story_id
+              , coalesce(sd.story_nm, '')      AS story_nm
+              , fn.news_id
+              , fn.news_link
+              , coalesce(nt.title_txt, '')     AS title_txt
+              , coalesce(nt.summary_txt, '')   AS summary_txt
+              , coalesce(fn.image_url, '')     AS image_url
+              , s.language_code
+          FROM dds.t_story_subscriptions s
+          JOIN LATERAL (
+              SELECT DISTINCT ON (news_id) story_id, news_id, news_link, image_url, published_dttm
+              FROM bds.b_story_feed_news
+              WHERE story_id = s.story_id
+              ORDER BY news_id, published_dttm DESC
+          ) fn ON true
+          JOIN LATERAL (
+              SELECT DISTINCT ON (news_id) news_id, title_txt, summary_txt
+              FROM dds.s_news_texts
+              WHERE news_id = fn.news_id AND language_code = s.language_code
+              ORDER BY news_id, _loaded_dttm DESC
+          ) nt ON true
+          LEFT JOIN dds.s_story_details sd
+                 ON sd.story_id = fn.story_id AND sd.language_code = s.language_code
+          WHERE s.is_active = true
+            AND NOT EXISTS (
+              SELECT 1 FROM dds.t_story_news_sent x
+              WHERE x.chat_id = s.chat_id AND x.story_id = fn.story_id AND x.news_id = fn.news_id)
+          ORDER BY fn.published_dttm
+          LIMIT 50
+
+    # empty-array guard before unarchive
+    - mapping: |
+        root = if this.length() == 0 { deleted() } else { this }
+
+    # unarchive разбивает этот массив на отдельные сообщения
+    - unarchive:
+        format: json_array
+
+    - mapping: |
+        meta key = this.chat_id.string() + ":" + this.news_id.string()
+
+output:
+  label: load_tg_story_news
+  broker:
+    pattern: fan_out
+    outputs:
+      - label: out_redpanda
+        redpanda:
+          seed_brokers: ["dwh-rp-1:9092"]
+          topic: "tg_story_news"
+          key: '${! meta("key") }'
+        processors:
+          - mapping: |
+              root.chat_id = this.chat_id
+              root.story_id = this.story_id
+              root.story_nm = this.story_nm.string().or("")
+              root.news_id = this.news_id.string()
+              root.news_link = this.news_link.string().or("")
+              root.title_txt = this.title_txt.string().or("")
+              root.summary_txt = this.summary_txt.string().or("")
+              root.image_url = this.image_url.string().or("")
+              root.language_code = this.language_code.string().or("ru")
+          - try:
+            - schema_registry_encode:
+                url: "http://dwh-rp-1:8081"
+                subject: "tg_story_news-value"
+                avro_raw_json: true
+          - catch:
+            - log:
+                level: ERROR
+                message: "❌ AVRO ENCODE FAILED: ${! error() }"
+            - mapping: 'root = deleted()'
+
+      - label: out_pg_sent
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.t_story_news_sent (chat_id, story_id, news_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (chat_id, story_id, news_id) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.chat_id,
+              this.story_id,
+              this.news_id.string()
+            ]
+          batching:
+            count: 5
+            period: 1s
