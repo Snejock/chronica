@@ -1,6 +1,6 @@
-INSERT INTO dds.h_stories (story_id, story_link)
-VALUES (1, '1'),
-       (2, '2');
+INSERT INTO dds.h_stories (story_id)
+VALUES (1),
+       (2);
 
 INSERT INTO dds.s_story_details (story_id, language_code, story_nm, geo_lat, geo_lon, is_active)
 VALUES
