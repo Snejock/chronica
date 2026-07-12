@@ -24,7 +24,7 @@ pipeline:
               SELECT
                   s.story_id
                   , s.subscriber_id
-                  , sc.channel_addr_txt::bigint         AS chat_id
+                  , sc.channel_link::bigint              AS chat_id
                   , coalesce(sdet.language_code, 'ru')  AS language_code
               FROM dds.l_story_subs s
               JOIN dds.s_subscriber_channels sc
