@@ -9,6 +9,7 @@ members = [
     "moex-fetcher",
     "rss-fetcher",
     "template",
+    "tg-sender",
 ]
 
 [[package]]
@@ -799,6 +800,23 @@ wheels = [
 name = "template"
 version = "0.1.0"
 source = { virtual = "services/template" }
+
+[[package]]
+name = "tg-sender"
+version = "0.1.0"
+source = { virtual = "services/tg-sender" }
+dependencies = [
+    { name = "chronica-common" },
+    { name = "confluent-kafka", extra = ["avro", "schema-registry"] },
+    { name = "httpx", extra = ["http2"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "chronica-common", editable = "common" },
+    { name = "confluent-kafka", extras = ["avro", "schema-registry"], specifier = ">=2.13.0" },
+    { name = "httpx", extras = ["http2"], specifier = ">=0.28.1" },
+]
 
 [[package]]
 name = "typing-extensions"
