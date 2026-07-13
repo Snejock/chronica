@@ -1,6 +1,5 @@
-# NOTE on naming: this pipeline deliberately breaks the {LOAD|RELOAD}_{SCHEMA}_{TABLE}
-# convention — its output is a Redpanda topic (story_subscriber_news) plus a Postgres dedup
-# marker table (dds.t_story_subscriber_news), not a single target table.
+# This pipeline has two outputs: the Redpanda topic story_subscriber_news and the
+# Postgres dedup marker table dds.t_story_subscriber_news named in the filename.
 #
 # Subscriptions are channel-agnostic (dds.l_story_subscriber / dds.h_subscribers) — this
 # pipeline filters down to the telegram channel via dds.s_subscriber_channels.
@@ -24,8 +23,8 @@ pipeline:
               SELECT
                   s.story_id
                   , s.subscriber_id
-                  , sc.channel_link::bigint              AS chat_id
-                  , coalesce(sdet.language_code, 'ru')  AS language_code
+                  , sc.channel_link::bigint            AS chat_id
+                  , coalesce(sdet.language_code, 'ru') AS language_code
               FROM dds.l_story_subscriber s
               JOIN dds.s_subscriber_channels sc
                      ON sc.subscriber_id = s.subscriber_id AND sc.channel_nm = 'telegram'
