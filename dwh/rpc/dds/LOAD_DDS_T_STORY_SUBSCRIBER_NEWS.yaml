@@ -1,4 +1,4 @@
-# This pipeline has two outputs: the Redpanda topic story_subscriber_news and the
+# This pipeline has two outputs: the Redpanda topic subscriber_story_news and the
 # Postgres dedup marker table dds.t_story_subscriber_news named in the filename.
 #
 # Subscriptions are channel-agnostic (dds.l_story_subscriber / dds.h_subscribers) — this
@@ -76,14 +76,14 @@ pipeline:
         meta key = this.subscriber_id.string() + ":" + this.news_id.string()
 
 output:
-  label: load_story_subscriber_news
+  label: load_subscriber_story_news
   broker:
     pattern: fan_out
     outputs:
       - label: out_redpanda
         redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
-          topic: "story_subscriber_news"
+          topic: "subscriber_story_news"
           key: '${! meta("key") }'
         processors:
           - mapping: |
@@ -99,7 +99,7 @@ output:
           - try:
             - schema_registry_encode:
                 url: "http://dwh-rp-1:8081"
-                subject: "story_subscriber_news-value"
+                subject: "subscriber_story_news-value"
                 avro_raw_json: true
           - catch:
             - log:

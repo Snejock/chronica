@@ -1,6 +1,6 @@
 {
   "type": "record",
-  "name": "StorySubscriberNews",
+  "name": "SubscriberStoryNews",
   "namespace": "chronica",
   "fields": [
     {
