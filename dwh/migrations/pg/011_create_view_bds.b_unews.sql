@@ -35,4 +35,5 @@ JOIN dds.d_rss_feeds d ON h.feed_id = d.feed_id
 JOIN dds.s_news_texts s ON u.news_id = s.news_id AND s.language_code IN ('en', 'ru')
 ;
 
-CREATE INDEX b_unews_embedding_idx ON bds.b_unews USING hnsw (embedding_vct vector_cosine_ops);
+CREATE INDEX b_unews__embedding_vct_idx ON bds.b_unews USING hnsw (embedding_vct vector_cosine_ops);
+CREATE UNIQUE INDEX b_unews__news_id_language_code_model_nm_uidx ON bds.b_unews (news_id, language_code, model_nm); -- необходим для REFRESH MATERIALIZED VIEW CONCURRENTLY

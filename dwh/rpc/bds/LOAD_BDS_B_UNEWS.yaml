@@ -10,7 +10,7 @@ pipeline:
         driver: postgres
         dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
-          REFRESH MATERIALIZED VIEW bds.b_unews;
+          REFRESH MATERIALIZED VIEW CONCURRENTLY bds.b_unews;
 
     - log:
         level: INFO
