@@ -1,6 +1,6 @@
 {
   "type": "record",
-  "name": "SubscriberStoryNews",
+  "name": "tg_notifications",
   "namespace": "chronica",
   "fields": [
     {

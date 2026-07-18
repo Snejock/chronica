@@ -1,6 +1,6 @@
 {
   "type": "record",
-  "name": "RSSNews",
+  "name": "rss_news_raw",
   "namespace": "chronica",
   "fields": [
     {"name": "source_system", "type": "string"},

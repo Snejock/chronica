@@ -1,6 +1,6 @@
 {
   "type": "record",
-  "name": "RSSNewsText",
+  "name": "news_translated",
   "namespace": "chronica",
   "fields": [
     {

@@ -1,7 +1,7 @@
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
-    topics: ["rss_news"]
+    topics: ["rss_news_raw"]
     consumer_group: "LOAD_DDS_S_NEWS_TEXTS"
 
 pipeline:
@@ -261,7 +261,7 @@ pipeline:
         meta key = this.link.string().or("")
 
 output:
-  label: load_dds_s_news_texts
+  label: load_news_translated
   broker:
     pattern: fan_out
     outputs:
@@ -289,7 +289,7 @@ output:
       - label: out_redpanda
         redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
-          topic: "dds_s_news_texts"
+          topic: "news_translated"
           key: '${! meta("key") }'
         processors:
           - mapping: |
@@ -300,7 +300,7 @@ output:
           - try:
               - schema_registry_encode:
                   url: "http://dwh-rp-1:8081"
-                  subject: "dds_s_news_texts-value"
+                  subject: "news_translated-value"
                   avro_raw_json: true
           - catch:
               - log:

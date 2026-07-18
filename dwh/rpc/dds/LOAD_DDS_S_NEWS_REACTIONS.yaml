@@ -1,7 +1,7 @@
 input:
   redpanda:
     seed_brokers: ["dwh-rp-1:9092"]
-    topics: ["dds_s_news_texts"]
+    topics: ["news_translated"]
     consumer_group: "LOAD_DDS_S_NEWS_REACTIONS"
 
 pipeline:

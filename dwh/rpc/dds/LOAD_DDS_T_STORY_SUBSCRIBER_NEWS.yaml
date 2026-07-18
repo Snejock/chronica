@@ -67,14 +67,14 @@ pipeline:
         meta key = this.subscriber_id.string() + ":" + this.news_id.string()
 
 output:
-  label: load_subscriber_story_news
+  label: load_tg_notifications
   broker:
     pattern: fan_out
     outputs:
       - label: out_redpanda
         redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
-          topic: "subscriber_story_news"
+          topic: "tg_notifications"
           key: '${! meta("key") }'
         processors:
           - mapping: |
@@ -90,7 +90,7 @@ output:
           - try:
             - schema_registry_encode:
                 url: "http://dwh-rp-1:8081"
-                subject: "subscriber_story_news-value"
+                subject: "tg_notifications-value"
                 avro_raw_json: true
           - catch:
             - log:

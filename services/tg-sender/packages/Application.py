@@ -6,7 +6,7 @@ from packages.providers import BrokerProvider, TelegramProvider
 
 logger = logging.getLogger(__name__)
 
-TOPIC = "subscriber_story_news"
+TOPIC = "tg_notifications"
 
 
 class Application:
