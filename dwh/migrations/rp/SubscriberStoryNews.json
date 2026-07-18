@@ -5,7 +5,7 @@
   "fields": [
     {
       "name": "channel_link",
-      "type": "long"
+      "type": "string"
     },
     {
       "name": "story_id",

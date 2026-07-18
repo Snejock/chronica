@@ -14,7 +14,7 @@ pipeline:
               SELECT
                   s.story_id
                   , s.subscriber_id
-                  , sc.channel_link::bigint            AS channel_link
+                  , sc.channel_link
                   , coalesce(sd.language_code, 'ru') AS language_code
               FROM dds.l_story_subscriber s
               JOIN dds.s_subscriber_channels sc
@@ -78,7 +78,7 @@ output:
           key: '${! meta("key") }'
         processors:
           - mapping: |
-              root.channel_link = this.channel_link
+              root.channel_link = this.channel_link.string()
               root.story_id = this.story_id
               root.story_nm = this.story_nm.string().or("")
               root.news_id = this.news_id.string()

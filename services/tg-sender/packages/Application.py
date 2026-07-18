@@ -19,7 +19,7 @@ class Application:
     async def processing(self, key: str, data: dict) -> None:
         """Отправка одной новости подписанного сюжета в Telegram."""
         try:
-            chat_id = data["channel_link"]
+            chat_id = int(data["channel_link"])
             caption_parts = [p for p in (data.get("story_nm"), data.get("title_txt")) if p]
             caption = "\n\n".join(caption_parts)
             if data.get("summary_txt"):
