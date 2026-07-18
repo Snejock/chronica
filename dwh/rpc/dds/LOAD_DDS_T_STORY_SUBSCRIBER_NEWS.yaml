@@ -10,49 +10,48 @@ pipeline:
         driver: postgres
         dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
-          WITH subs AS (
+          WITH subscribers AS (
+              -- получение списка subscriber_id и story_id
               SELECT
-                  s.story_id
-                  , s.subscriber_id
+                  ss.story_id
+                  , ss.subscriber_id
                   , sc.channel_link
-                  , coalesce(sd.language_code, 'ru') AS language_code
-              FROM dds.l_story_subscriber s
+                  , sd.language_code
+              FROM dds.l_story_subscriber ss
               JOIN dds.s_subscriber_channels sc
-                     ON sc.subscriber_id = s.subscriber_id AND sc.channel_nm = 'telegram'
+                   ON sc.subscriber_id = ss.subscriber_id AND sc.channel_nm = 'telegram'
               LEFT JOIN dds.s_subscriber_details sd
-                     ON sd.subscriber_id = s.subscriber_id
-              WHERE s.is_active = true
+                   ON sd.subscriber_id = ss.subscriber_id
+              WHERE ss.is_active = true
           )
           SELECT
-              subs.channel_link
-              , subs.subscriber_id
-              , fn.story_id
-              , coalesce(sd.story_nm, '')      AS story_nm
-              , fn.news_id
-              , fn.news_link
-              , coalesce(nt.title_txt, '')     AS title_txt
-              , coalesce(nt.summary_txt, '')   AS summary_txt
-              , coalesce(fn.image_url, '')     AS image_url
-              , subs.language_code
-          FROM subs
+              s.channel_link
+              , s.subscriber_id
+              , s.story_id
+              , sunt.story_nm
+              , sunt.news_id
+              , h.news_link
+              , coalesce(nt.title_txt, '')   AS title_txt
+              , coalesce(nt.summary_txt, '') AS summary_txt
+              , coalesce(sm.image_url, '')   AS image_url
+              , s.language_code
+          FROM subscribers s
+          JOIN bds.b_story_unews_texts sunt
+               ON s.story_id = sunt.story_id AND s.language_code = sunt.language_code
           JOIN LATERAL (
-              SELECT DISTINCT ON (news_id) story_id, news_id, news_link, image_url, published_dttm
-              FROM bds.b_story_feed_news
-              WHERE story_id = subs.story_id
-              ORDER BY news_id, published_dttm DESC
-          ) fn ON true
-          JOIN LATERAL (
-              SELECT DISTINCT ON (news_id) news_id, title_txt, summary_txt
+              -- оригинал приоритетнее перевода (model_nm = ''), при равенстве - последняя загруженная запись
+              SELECT title_txt, summary_txt
               FROM dds.s_news_texts
-              WHERE news_id = fn.news_id AND language_code = subs.language_code
-              ORDER BY news_id, _loaded_dttm DESC
+              WHERE news_id = sunt.news_id AND language_code = sunt.language_code
+              ORDER BY (model_nm = '') DESC, _loaded_dttm DESC
+              LIMIT 1
           ) nt ON true
-          LEFT JOIN dds.s_story_details sd
-                 ON sd.story_id = fn.story_id AND sd.language_code = subs.language_code
+          LEFT JOIN dds.s_news_media sm ON sunt.news_id = sm.news_id
+          JOIN dds.h_news h ON sunt.news_id = h.news_id
           WHERE NOT EXISTS (
               SELECT 1 FROM dds.t_story_subscriber_news x
-              WHERE x.subscriber_id = subs.subscriber_id AND x.story_id = fn.story_id AND x.news_id = fn.news_id)
-          ORDER BY fn.published_dttm
+              WHERE x.subscriber_id = s.subscriber_id AND x.story_id = s.story_id AND x.news_id = sunt.news_id)
+          ORDER BY h.published_dttm
           LIMIT 50
 
     # empty-array guard before unarchive
