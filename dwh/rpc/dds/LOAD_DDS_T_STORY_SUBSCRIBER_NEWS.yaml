@@ -17,7 +17,9 @@ pipeline:
                   , ss.subscriber_id
                   , sc.channel_link
                   , sd.language_code
+                  , hs._loaded_dttm AS subscriber_created_dttm
               FROM dds.l_story_subscriber ss
+              JOIN dds.h_subscribers hs ON hs.subscriber_id = ss.subscriber_id
               JOIN dds.s_subscriber_channels sc
                    ON sc.subscriber_id = ss.subscriber_id AND sc.channel_nm = 'telegram'
               LEFT JOIN dds.s_subscriber_details sd
@@ -31,6 +33,7 @@ pipeline:
               , sunt.story_nm
               , sunt.news_id
               , h.news_link
+              , h.published_dttm
               , coalesce(nt.title_txt, '')   AS title_txt
               , coalesce(nt.summary_txt, '') AS summary_txt
               , coalesce(sm.image_url, '')   AS image_url
@@ -48,7 +51,9 @@ pipeline:
           ) nt ON true
           LEFT JOIN dds.s_news_media sm ON sunt.news_id = sm.news_id
           JOIN dds.h_news h ON sunt.news_id = h.news_id
-          WHERE NOT EXISTS (
+          WHERE h.published_dttm > s.subscriber_created_dttm
+            AND h.published_dttm > now() - interval '1' day
+            AND NOT EXISTS (
               SELECT 1 FROM dds.t_story_subscriber_news x
               WHERE x.subscriber_id = s.subscriber_id AND x.story_id = s.story_id AND x.news_id = sunt.news_id)
           ORDER BY h.published_dttm
@@ -82,6 +87,7 @@ output:
               root.story_nm = this.story_nm.string().or("")
               root.news_id = this.news_id.string()
               root.news_link = this.news_link.string().or("")
+              root.published_dttm = this.published_dttm.string().or("")
               root.title_txt = this.title_txt.string().or("")
               root.summary_txt = this.summary_txt.string().or("")
               root.image_url = this.image_url.string().or("")

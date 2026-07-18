@@ -25,6 +25,11 @@
       "type": "string"
     },
     {
+      "name": "published_dttm",
+      "type": "string",
+      "default": ""
+    },
+    {
       "name": "title_txt",
       "type": "string",
       "default": ""
