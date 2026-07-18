@@ -63,6 +63,16 @@ for a dense example):
 | `_cnt` | count |
 | `_json` | jsonb payload |
 
+Index/constraint naming: `table__field_1_field_2_<suffix>`, double underscore between the bare
+table name (no schema prefix) and the field list, single underscore between fields — `<suffix>`
+∈ `idx` (regular index), `uidx` (unique index), `pk` (primary key), `fk` (foreign key), `seq`
+(explicit standalone sequence, e.g. `dwh/migrations/pg/031_alter_dds.d_forecasts_lifecycle.sql`).
+Field list is every indexed/constrained column, in order. Applies to explicitly named
+constraints/indexes only — implicit sequences behind `GENERATED ALWAYS AS IDENTITY` columns keep
+Postgres's own default name (e.g. `h_subscribers_subscriber_id_seq`), left unrenamed by
+convention. Don't confuse this with the column suffix `_idx` above (scale/enum bucket, e.g.
+`reach_idx`) — that's a column name, this is an index/constraint identifier.
+
 `_loaded_dttm` and `_source_system` (leading underscore) are technical columns present on
 most tables. Other established bare names: `language_code`, `country_code`, `is_*` (boolean),
 `geo_lat`/`geo_lon`.

@@ -8,9 +8,9 @@ CREATE TABLE dds.st_forecasts (
     last_news_id            text,
     last_published_dttm     timestamp(0) with time zone,
 
-    CONSTRAINT st_forecasts_pkey
+    CONSTRAINT st_forecasts__forecast_id_pk
         PRIMARY KEY (forecast_id),
 
-    CONSTRAINT st_forecasts_news_id_fkey
+    CONSTRAINT st_forecasts__last_news_id_fk
         FOREIGN KEY (last_news_id) REFERENCES dds.h_news(news_id)
 );

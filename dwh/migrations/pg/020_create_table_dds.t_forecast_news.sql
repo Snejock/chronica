@@ -10,12 +10,12 @@ CREATE TABLE dds.t_forecast_news (
     p_refute_prt    numeric(4, 3) NOT NULL CHECK (p_refute_prt    BETWEEN 0.001 AND 0.999),
     reason_txt      text,
 
-    CONSTRAINT t_forecast_news_pkey
+    CONSTRAINT t_forecast_news__news_id_forecast_id_model_nm_pk
         PRIMARY KEY (news_id, forecast_id, model_nm),
 
-    CONSTRAINT t_forecast_news_news_id_fkey
+    CONSTRAINT t_forecast_news__news_id_fk
         FOREIGN KEY (news_id) REFERENCES dds.h_news(news_id)
 );
 
-CREATE INDEX t_forecast_news_story_id_idx ON dds.t_forecast_news(story_id);
-CREATE INDEX t_forecast_news_published_dttm_idx ON dds.t_forecast_news(published_dttm);
+CREATE INDEX t_forecast_news__story_id_idx ON dds.t_forecast_news(story_id);
+CREATE INDEX t_forecast_news__published_dttm_idx ON dds.t_forecast_news(published_dttm);

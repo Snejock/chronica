@@ -10,6 +10,6 @@ CREATE TABLE IF NOT EXISTS dds.d_forecasts (
     p_prior_prt     numeric(4, 3) NOT NULL CHECK (p_prior_prt BETWEEN 0.001 AND 0.999),
     is_active       boolean DEFAULT true,
 
-    CONSTRAINT d_forecasts_pkey
+    CONSTRAINT d_forecasts__forecast_id_language_code_pk
         PRIMARY KEY (forecast_id, language_code)
 );

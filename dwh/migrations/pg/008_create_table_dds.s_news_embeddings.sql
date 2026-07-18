@@ -8,4 +8,4 @@ CREATE TABLE IF NOT EXISTS dds.s_news_embeddings (
         PRIMARY KEY (news_id, model_nm)
 );
 
-CREATE INDEX s_news_embeddings_embedding_idx ON dds.s_news_embeddings USING hnsw (embedding_vct vector_cosine_ops);
+CREATE INDEX s_news_embeddings__embedding_vct_idx ON dds.s_news_embeddings USING hnsw (embedding_vct vector_cosine_ops);

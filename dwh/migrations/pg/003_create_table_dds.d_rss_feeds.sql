@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS dds.d_rss_feeds (
     _loaded_dttm    timestamp(0) with time zone DEFAULT now(),
-    feed_id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    feed_id         integer GENERATED ALWAYS AS IDENTITY CONSTRAINT d_rss_feeds__feed_id_pk PRIMARY KEY,
     feed_nm         text,
     feed_link       text,
     feed_type       text,

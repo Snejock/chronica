@@ -19,6 +19,6 @@ CREATE TABLE IF NOT EXISTS dds.s_news_reactions (
     confidence_prt  numeric(3, 2),
     reason_txt      text,
 
-    CONSTRAINT s_news_reactions_pkey
+    CONSTRAINT s_news_reactions__news_id_model_nm_pk
         PRIMARY KEY (news_id, model_nm)
 );

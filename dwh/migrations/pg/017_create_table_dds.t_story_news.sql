@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS dds.t_story_news (
     published_dttm  timestamp(0) with time zone,
     distance_prt    numeric(4, 3),
 
-    CONSTRAINT t_story_news_pkey
+    CONSTRAINT t_story_news__story_id_news_id_model_nm_pk
         PRIMARY KEY (story_id, news_id, model_nm)
 );
 
-CREATE INDEX IF NOT EXISTS t_story_news_story_id_idx ON dds.t_story_news(story_id);
-CREATE INDEX IF NOT EXISTS t_story_news_story_id_published_dttm_idx ON dds.t_story_news(story_id, published_dttm);
+CREATE INDEX IF NOT EXISTS t_story_news__story_id_idx ON dds.t_story_news(story_id);
+CREATE INDEX IF NOT EXISTS t_story_news__story_id_published_dttm_idx ON dds.t_story_news(story_id, published_dttm);

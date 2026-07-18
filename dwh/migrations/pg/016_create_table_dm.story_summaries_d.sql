@@ -9,6 +9,6 @@ CREATE TABLE IF NOT EXISTS dm.story_summaries_d (
     headline_txt  text,
     summary_txt   text,
 
-    CONSTRAINT story_summaries_d_pkey
+    CONSTRAINT story_summaries_d__story_id_dt_model_nm_language_code_pk
         PRIMARY KEY (story_id, dt, model_nm, language_code)
 );

@@ -10,12 +10,12 @@ CREATE TABLE IF NOT EXISTS dm.story_key_events (
     coverage_from_dt date,
     coverage_to_dt   date,
 
-    CONSTRAINT story_key_events_pkey
+    CONSTRAINT story_key_events__story_id_model_nm_language_code_is_active_pk
         PRIMARY KEY (story_id, model_nm, language_code, is_active),
 
-    CONSTRAINT story_key_events_story_id_fkey
+    CONSTRAINT story_key_events__story_id_fk
         FOREIGN KEY (story_id) REFERENCES dds.h_stories(story_id)
 );
 
-CREATE INDEX IF NOT EXISTS story_key_events_is_active_idx
+CREATE INDEX IF NOT EXISTS story_key_events__story_id_language_code_is_active_idx
     ON dm.story_key_events(story_id, language_code, is_active);
