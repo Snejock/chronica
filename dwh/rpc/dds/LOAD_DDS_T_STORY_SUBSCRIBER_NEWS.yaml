@@ -1,9 +1,3 @@
-# This pipeline has two outputs: the Redpanda topic subscriber_story_news and the
-# Postgres dedup marker table dds.t_story_subscriber_news named in the filename.
-#
-# Subscriptions are channel-agnostic (dds.l_story_subscriber / dds.h_subscribers) — this
-# pipeline filters down to the telegram channel via dds.s_subscriber_channels.
-
 input:
   generate:
     interval: "1m"
@@ -11,9 +5,6 @@ input:
 
 pipeline:
   processors:
-    # candidate news items for active telegram subscriptions, not yet sent to the subscriber.
-    # DISTINCT ON collapses duplicate rows caused by multiple model_nm values on
-    # dds.t_story_news / dds.s_news_texts (both keyed by model_nm).
     - label: postgres
       sql_raw:
         driver: postgres
@@ -23,17 +14,17 @@ pipeline:
               SELECT
                   s.story_id
                   , s.subscriber_id
-                  , sc.channel_link::bigint            AS chat_id
-                  , coalesce(sdet.language_code, 'ru') AS language_code
+                  , sc.channel_link::bigint            AS channel_link
+                  , coalesce(sd.language_code, 'ru') AS language_code
               FROM dds.l_story_subscriber s
               JOIN dds.s_subscriber_channels sc
                      ON sc.subscriber_id = s.subscriber_id AND sc.channel_nm = 'telegram'
-              LEFT JOIN dds.s_subscriber_details sdet
-                     ON sdet.subscriber_id = s.subscriber_id
+              LEFT JOIN dds.s_subscriber_details sd
+                     ON sd.subscriber_id = s.subscriber_id
               WHERE s.is_active = true
           )
           SELECT
-              subs.chat_id
+              subs.channel_link
               , subs.subscriber_id
               , fn.story_id
               , coalesce(sd.story_nm, '')      AS story_nm
@@ -87,7 +78,7 @@ output:
           key: '${! meta("key") }'
         processors:
           - mapping: |
-              root.chat_id = this.chat_id
+              root.channel_link = this.channel_link
               root.story_id = this.story_id
               root.story_nm = this.story_nm.string().or("")
               root.news_id = this.news_id.string()
