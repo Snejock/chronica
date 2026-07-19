@@ -40,7 +40,7 @@ class TelegramProvider:
                     "parse_mode": "HTML",
                 },
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
         except Exception:
             logger.exception(f"sendPhoto failed for chat_id={chat_id}, falling back to sendMessage")
             await self.send_message(chat_id, caption)
@@ -57,7 +57,15 @@ class TelegramProvider:
                 "parse_mode": "HTML",
             },
         )
-        response.raise_for_status()
+        self._raise_for_status(response)
+
+    @staticmethod
+    def _raise_for_status(response: httpx.Response) -> None:
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            logger.error(f"Telegram API error {response.status_code}: {response.text}")
+            raise
 
     async def close(self) -> None:
         async with self._lock:
