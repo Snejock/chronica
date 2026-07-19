@@ -12,6 +12,9 @@ class TelegramProvider:
     """Асинхронный клиент Telegram Bot API"""
     def __init__(self, config, timeout_sec: int = 15):
         self._token = config.telegram.bot_token
+        self._proxy_url = (
+            f"http://{config.proxy.user}:{config.proxy.password}@{config.proxy.host}:{config.proxy.port}"
+        )
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
         self._timeout = timeout_sec
@@ -23,6 +26,7 @@ class TelegramProvider:
                     base_url=f"{TELEGRAM_API_URL}/bot{self._token}",
                     http2=True,
                     timeout=self._timeout,
+                    proxy=self._proxy_url,
                 )
                 logger.info("Telegram client initialized")
 
