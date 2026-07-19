@@ -17,9 +17,8 @@ pipeline:
                   , ss.subscriber_id
                   , sc.channel_link
                   , sd.language_code
-                  , hs._loaded_dttm AS subscriber_created_dttm
+                  , ss._loaded_dttm AS subscribed_dttm
               FROM dds.l_story_subscriber ss
-              JOIN dds.h_subscribers hs ON hs.subscriber_id = ss.subscriber_id
               JOIN dds.s_subscriber_channels sc
                    ON sc.subscriber_id = ss.subscriber_id AND sc.channel_nm = 'telegram'
               LEFT JOIN dds.s_subscriber_details sd
@@ -53,7 +52,7 @@ pipeline:
           LEFT JOIN dds.s_news_media sm ON sunt.news_id = sm.news_id
           JOIN dds.h_news h ON sunt.news_id = h.news_id
           LEFT JOIN dds.d_rss_feeds rf ON rf.feed_id = h.feed_id
-          WHERE h.published_dttm > s.subscriber_created_dttm
+          WHERE h.published_dttm > s.subscribed_dttm
             AND h.published_dttm > now() - interval '1' day
             AND NOT EXISTS (
               SELECT 1 FROM dds.t_story_subscriber_news x
