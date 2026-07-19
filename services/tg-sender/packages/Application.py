@@ -15,6 +15,7 @@ TOPIC = "tg_notifications"
 CONSUMER_GROUP_ID = "TG-SENDER"
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 DEFAULT_LOCALE = "ru"
+FEED_FALLBACK_NM = {"ru": "Источник", "en": "Source"}
 
 
 class Application:
@@ -40,12 +41,13 @@ class Application:
         """Отправка одной новости подписанного сюжета в Telegram."""
         try:
             chat_id = int(data["channel_link"])
+            language_code = data.get("language_code") or DEFAULT_LOCALE
             story_nm = html.escape(data.get("story_nm") or "")
             title_txt = html.escape(data.get("title_txt") or "")
             summary_txt = html.escape(data.get("summary_txt") or "")
-            feed_nm = html.escape(data.get("feed_nm") or "Источник")
+            feed_nm = html.escape(data.get("feed_nm") or FEED_FALLBACK_NM.get(language_code, FEED_FALLBACK_NM[DEFAULT_LOCALE]))
             news_link = html.escape(data.get("news_link") or "", quote=True)
-            published_dttm = self._format_published_dttm(data.get("published_dttm"), data.get("language_code"))
+            published_dttm = self._format_published_dttm(data.get("published_dttm"), language_code)
 
             # сборка сообщения
             caption = story_nm
