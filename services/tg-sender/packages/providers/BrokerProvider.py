@@ -14,9 +14,9 @@ class BrokerProvider:
         self._consumer = None
         self._producer = None
         self._lock = asyncio.Lock()
-        self.running = False
+        self._running = False
 
-    async def open(self, topic: str, avro_schema: str | None = None) -> None:
+    async def open(self, topic: str, group_id: str, avro_schema: str | None = None) -> None:
         """
         Открывает AVRO-consumer и подписывается на topic.
         avro_schema — JSON-строка схемы; если None, схема берётся из Schema Registry.
@@ -32,7 +32,7 @@ class BrokerProvider:
                 )
                 conf = {
                     "bootstrap.servers": f"{self.config.host}:{self.config.port}",
-                    "group.id": self.config.client_id,
+                    "group.id": group_id,
                     "auto.offset.reset": "earliest",
                     "enable.auto.commit": False,
                     "key.deserializer": StringDeserializer("utf_8"),
@@ -40,7 +40,7 @@ class BrokerProvider:
                 }
                 self._consumer = DeserializingConsumer(conf)
                 self._consumer.subscribe([topic])
-                self.running = True
+                self._running = True
                 logger.info(f"Consumer started. Subscribed to: {topic}")
             except Exception:
                 logger.exception("Failed to start consumer")
@@ -54,7 +54,7 @@ class BrokerProvider:
         logger.info("Starting consume loop...")
         loop = asyncio.get_running_loop()
 
-        while self.running:
+        while self._running:
             try:
                 message = await loop.run_in_executor(None, self._consumer.poll, 1.0)
                 if message is None:
@@ -90,7 +90,7 @@ class BrokerProvider:
 
     async def close(self) -> None:
         async with self._lock:
-            self.running = False
+            self._running = False
             if self._producer is not None:
                 try:
                     await asyncio.get_running_loop().run_in_executor(None, self._producer.flush, 10)

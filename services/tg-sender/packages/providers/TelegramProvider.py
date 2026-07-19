@@ -9,15 +9,14 @@ CAPTION_LIMIT = 1024
 
 
 class TelegramProvider:
-    """Асинхронный клиент Telegram Bot API (только отправка)."""
-
+    """Асинхронный клиент Telegram Bot API"""
     def __init__(self, config, timeout_sec: int = 15):
         self._token = config.telegram.bot_token
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
         self._timeout = timeout_sec
 
-    async def connect(self) -> None:
+    async def open(self) -> None:
         async with self._lock:
             if self._client is None:
                 self._client = httpx.AsyncClient(
@@ -29,7 +28,7 @@ class TelegramProvider:
 
     async def send_photo(self, chat_id: int, photo_url: str, caption: str) -> None:
         if self._client is None:
-            raise RuntimeError("Telegram client is not connected. Call connect() first.")
+            raise RuntimeError("Telegram client is not connected. Call open() first.")
 
         try:
             response = await self._client.post(
@@ -48,7 +47,7 @@ class TelegramProvider:
 
     async def send_message(self, chat_id: int, text: str) -> None:
         if self._client is None:
-            raise RuntimeError("Telegram client is not connected. Call connect() first.")
+            raise RuntimeError("Telegram client is not connected. Call open() first.")
 
         response = await self._client.post(
             "/sendMessage",

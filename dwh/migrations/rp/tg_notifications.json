@@ -45,6 +45,11 @@
       "default": ""
     },
     {
+      "name": "feed_nm",
+      "type": "string",
+      "default": ""
+    },
+    {
       "name": "language_code",
       "type": "string",
       "default": "ru"
