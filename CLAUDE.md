@@ -9,8 +9,8 @@ track events without noise. See `README.md` (Russian) for the human-facing overv
 ```
 RSS sources → rss-fetcher ──┐
                              ├──→ Redpanda ──→ Redpanda Connect (dwh/rpc) → PostgreSQL → Evidence.dev
-MOEX → moex_fetcher ─────────┘                                                  ↑
-                                              Redis (cache)      ClickHouse ←── moex_fetcher
+MOEX → moex-fetcher ─────────┘                                                  ↑
+                                              Redis (cache)      ClickHouse ←── moex-fetcher
 ```
 
 ## Repo map
@@ -21,12 +21,13 @@ MOEX → moex_fetcher ─────────┘                            
 | `dwh/migrations/{pg,ch,rp}/` | Schema migrations (Postgres, ClickHouse, Redpanda schema registry) |
 | `dwh/rpc/{ods,dds,bds,dm}/` | Redpanda Connect (Benthos) pipeline configs, one YAML per stream |
 | `dwh/dbt/` | dbt project (own README, custom materializations) |
-| `services/{rss-fetcher,moex_fetcher}/` | Python data-collector services |
+| `services/{rss-fetcher,moex-fetcher}/` | Python data-collector services |
+| `services/tg-sender/` | Consumes the `tg_notifications` topic, sends per-subscriber Telegram messages |
 | `services/template/` | Canonical skeleton for a new service |
 | `common/` | Shared package `chronica-common` (Pydantic models, utils), workspace member |
 | `evidence/` | Evidence.dev (SvelteKit) BI dashboard |
 | `.claude/agents/` | Custom subagents (technical-writer, evidence-developer) |
-| `docker-compose.yaml` (root) | `include:`-only orchestrator pulling in all the compose files above |
+| `docker-compose.yaml` (root) | `include:`-only orchestrator; currently pulls in most of the compose files above (`dwh/compose/dbt`, `dwh/compose/minio`, and `services/moex-fetcher` are not included/commented out) |
 
 There is **no `ai-translator` service** — translation happens inside the
 `dwh/rpc/dds/*_S_NEWS_TEXTS.yaml` pipelines (LLM branch), not a standalone service.
@@ -66,7 +67,7 @@ for a dense example):
 Index/constraint naming: `table__field_1_field_2_<suffix>`, double underscore between the bare
 table name (no schema prefix) and the field list, single underscore between fields — `<suffix>`
 ∈ `idx` (regular index), `uidx` (unique index), `pk` (primary key), `fk` (foreign key), `seq`
-(explicit standalone sequence, e.g. `dwh/migrations/pg/031_alter_dds.d_forecasts_lifecycle.sql`).
+(explicit standalone sequence).
 Field list is every indexed/constrained column, in order. Applies to explicitly named
 constraints/indexes only — implicit sequences behind `GENERATED ALWAYS AS IDENTITY` columns keep
 Postgres's own default name (e.g. `h_subscribers_subscriber_id_seq`), left unrenamed by

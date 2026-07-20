@@ -18,6 +18,7 @@ MOEX → moex-fetcher ──────────┘                         
 |--------|----------|
 | `rss-fetcher` | Периодический опрос RSS-лент, парсинг и публикация новостей в Redpanda |
 | `moex-fetcher` | Стриминг биржевых сделок с MOEX ISS API, запись в ClickHouse (`ods.moex_trades`) |
+| `tg-sender` | Отправка персонализированных уведомлений о новостях подписчикам в Telegram (консьюмер топика `tg_notifications`) |
 
 ### Хранилище данных (`/dwh`)
 
@@ -27,6 +28,7 @@ MOEX → moex-fetcher ──────────┘                         
 |------|----------|
 | `ods` | Сырые данные из источников |
 | `dds` | Хабы, сателлиты, справочники, сводки по сюжетам |
+| `bds` | Материализованные представления с бизнес-логикой поверх `dds` |
 | `dm` | Витрины данных для дашборда (views) |
 
 Инфраструктура DWH:
@@ -94,7 +96,7 @@ cd evidence/compose && docker compose up chr-evidence-prod
 ## Конфигурация
 
 - RSS-источники: `services/rss-fetcher/config/rss_feeds.yaml`
-- MOEX (тикеры, расписание): `services/moex_fetcher/config/config.yml`
+- MOEX (тикеры, расписание): `services/moex-fetcher/config/config.yml`
 - Переменные окружения: `.env` (единственный активный конфиг; `.env.local` — инертная копия
   локальных dev-значений для ручной подмены)
 - Миграции PostgreSQL: `dwh/migrations/pg/`
