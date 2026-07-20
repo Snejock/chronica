@@ -15,7 +15,7 @@ wheels/
 
 # Environments
 .env.server
-.env.*
+.env*
 
 # Logs
 *.log*
