@@ -25,18 +25,6 @@ class Application:
         self.br_provider = BrokerProvider(config=self.config)
         self.tg_provider = TelegramProvider(config=self.config)
 
-    @staticmethod
-    def _format_published_dttm(raw_dttm: str | None, language_code: str | None) -> str:
-        """Приводит ISO-строку даты публикации (UTC) к читаемому виду по Москве на языке подписчика."""
-        if not raw_dttm:
-            return ""
-        try:
-            dt = datetime.fromisoformat(raw_dttm).astimezone(MOSCOW_TZ)
-            return format_datetime(dt, "d MMMM y HH:mm", locale=language_code or DEFAULT_LOCALE)
-        except (ValueError, UnknownLocaleError):
-            logger.warning(f"Could not format published_dttm={raw_dttm!r} for locale={language_code!r}")
-            return ""
-
     async def processing(self, key: str, data: dict) -> None:
         """Отправка одной новости подписанного сюжета в Telegram."""
         try:
@@ -92,3 +80,15 @@ class Application:
             await self.br_provider.close()
             await self.tg_provider.close()
             logger.info("Providers closed")
+
+    @staticmethod
+    def _format_published_dttm(raw_dttm: str | None, language_code: str | None) -> str:
+        """Приводит ISO-строку даты публикации (UTC) к читаемому виду по Москве на языке подписчика."""
+        if not raw_dttm:
+            return ""
+        try:
+            dt = datetime.fromisoformat(raw_dttm).astimezone(MOSCOW_TZ)
+            return format_datetime(dt, "d MMMM y HH:mm", locale=language_code or DEFAULT_LOCALE)
+        except (ValueError, UnknownLocaleError):
+            logger.warning(f"Could not format published_dttm={raw_dttm!r} for locale={language_code!r}")
+            return ""
