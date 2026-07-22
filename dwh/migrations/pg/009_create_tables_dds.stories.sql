@@ -24,8 +24,8 @@ DROP TABLE IF EXISTS dds.s_story_storylines;
 CREATE TABLE IF NOT EXISTS dds.s_story_storylines (
     _loaded_dttm    timestamp(0) with time zone DEFAULT now(),
     story_id        integer NOT NULL CONSTRAINT s_story_storylines__story_id_fk REFERENCES dds.h_stories(story_id),
-    storyline_id    integer NOT NULL,
     storyline_txt   text,
+    storyline_id    text GENERATED ALWAYS AS (xxh64(storyline_txt)) STORED,
     model_nm        text NOT NULL,
     embedding_vct   vector(768),
     is_active       boolean DEFAULT true,
