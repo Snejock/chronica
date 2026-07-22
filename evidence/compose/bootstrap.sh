@@ -27,12 +27,39 @@ case $1 in
         echo "Starting in production mode (build + periodic rebuild + preview)."
         REBUILD_INTERVAL=${EVIDENCE_REBUILD_INTERVAL:-1200}
         npm install
-        npm run sources && npm run build
+
+        # `build` is always a symlink to a timestamped release directory, never a real
+        # directory itself. Each rebuild compiles into a brand-new release dir (via
+        # EVIDENCE_BUILD_DIR), leaving the currently-served release untouched, then
+        # repoints `build` at it with a single atomic rename. `npm run preview` resolves
+        # the `build` symlink on every request, so the swap is instant and the site never
+        # 404s while a rebuild is in progress. If the build fails, `build` is left as-is.
+        rebuild() {
+            local release="build_$(date +%Y%m%d%H%M%S%N)"
+            rm -rf "$release"
+            if npm run sources && EVIDENCE_BUILD_DIR="./$release" npm run build; then
+                ln -sfn "$release" build.tmp
+                mv -T build.tmp build
+                for d in build_*/; do
+                    d=${d%/}
+                    [ -d "$d" ] || continue
+                    [ "$d" = "$release" ] && continue
+                    rm -rf "$d"
+                done
+                return 0
+            else
+                echo "[build] failed, keeping previous release"
+                rm -rf "$release"
+                return 1
+            fi
+        }
+
+        rebuild || true
         (
           while true; do
             sleep "$REBUILD_INTERVAL"
-            echo "[refresh] npm run sources && npm run build"
-            npm run sources && npm run build || echo "[refresh] failed, will retry next cycle"
+            echo "[refresh] rebuilding..."
+            rebuild || echo "[refresh] failed, will retry next cycle"
           done
         ) &
         COMMAND="npm run preview"
