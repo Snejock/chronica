@@ -25,39 +25,47 @@ pipeline:
                    ON sd.subscriber_id = ss.subscriber_id
               WHERE ss.is_active = true
           )
-          SELECT
-              s.channel_link
-              , s.subscriber_id
-              , s.story_id
-              , sunt.story_nm
-              , sunt.news_id
-              , h.news_link
-              , h.published_dttm
-              , coalesce(nt.title_txt, '')   AS title_txt
-              , coalesce(nt.summary_txt, '') AS summary_txt
-              , coalesce(sm.image_url, '')   AS image_url
-              , coalesce(rf.feed_nm, '')     AS feed_nm
-              , s.language_code
-          FROM subscribers s
-          JOIN bds.b_story_unews_texts sunt
-               ON s.story_id = sunt.story_id AND s.language_code = sunt.language_code
-          JOIN LATERAL (
-              -- оригинал приоритетнее перевода (model_nm = ''), при равенстве - последняя загруженная запись
-              SELECT title_txt, summary_txt
-              FROM dds.s_news_texts
-              WHERE news_id = sunt.news_id AND language_code = sunt.language_code
-              ORDER BY (model_nm = '') DESC, _loaded_dttm DESC
-              LIMIT 1
-          ) nt ON true
-          LEFT JOIN dds.s_news_media sm ON sunt.news_id = sm.news_id
-          JOIN dds.h_news h ON sunt.news_id = h.news_id
-          LEFT JOIN dds.d_rss_feeds rf ON rf.feed_id = h.feed_id
-          WHERE h.published_dttm > s.subscribed_dttm
-            AND h.published_dttm > now() - interval '1' day
-            AND NOT EXISTS (
-              SELECT 1 FROM dds.t_story_subscriber_news x
-              WHERE x.subscriber_id = s.subscriber_id AND x.story_id = s.story_id AND x.news_id = sunt.news_id)
-          ORDER BY h.published_dttm
+          SELECT * FROM (
+              -- одна новость может входить в несколько историй, на которые подписан
+              -- один и тот же subscriber - DISTINCT ON схлопывает такие строки в одну,
+              -- отдавая историю с наименьшим story_id, чтобы не слать дубли в Telegram
+              SELECT DISTINCT ON (s.subscriber_id, sunt.news_id)
+                  s.channel_link
+                  , s.subscriber_id
+                  , s.story_id
+                  , sunt.story_nm
+                  , sunt.news_id
+                  , h.news_link
+                  , h.published_dttm
+                  , coalesce(nt.title_txt, '')   AS title_txt
+                  , coalesce(nt.summary_txt, '') AS summary_txt
+                  , coalesce(sm.image_url, '')   AS image_url
+                  , coalesce(rf.feed_nm, '')     AS feed_nm
+                  , s.language_code
+              FROM subscribers s
+              JOIN bds.b_story_unews_texts sunt
+                   ON s.story_id = sunt.story_id AND s.language_code = sunt.language_code
+              JOIN LATERAL (
+                  -- оригинал приоритетнее перевода (model_nm = ''), при равенстве - последняя загруженная запись
+                  SELECT title_txt, summary_txt
+                  FROM dds.s_news_texts
+                  WHERE news_id = sunt.news_id AND language_code = sunt.language_code
+                  ORDER BY (model_nm = '') DESC, _loaded_dttm DESC
+                  LIMIT 1
+              ) nt ON true
+              LEFT JOIN dds.s_news_media sm ON sunt.news_id = sm.news_id
+              JOIN dds.h_news h ON sunt.news_id = h.news_id
+              LEFT JOIN dds.d_rss_feeds rf ON rf.feed_id = h.feed_id
+              WHERE h.published_dttm > s.subscribed_dttm
+                AND h.published_dttm > now() - interval '1' day
+                -- анти-джойн на уровне (subscriber, news), а не (subscriber, story, news):
+                -- новость уже отправленная подписчику по любой из историй больше не выбирается
+                AND NOT EXISTS (
+                  SELECT 1 FROM dds.t_story_subscriber_news x
+                  WHERE x.subscriber_id = s.subscriber_id AND x.news_id = sunt.news_id)
+              ORDER BY s.subscriber_id, sunt.news_id, s.story_id
+          ) dedup
+          ORDER BY published_dttm
           LIMIT 50
 
     # empty-array guard before unarchive
