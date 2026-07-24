@@ -6,3 +6,5 @@ CREATE TABLE IF NOT EXISTS dds.h_news (
     published_dttm  timestamp(0) with time zone,
     feed_id         integer
 );
+
+CREATE INDEX h_news__published_dttm_news_id_idx ON dds.h_news (published_dttm, news_id);
