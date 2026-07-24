@@ -21,6 +21,7 @@ wheels/
 *.log*
 
 # Temporary
+design/
 
 # DBT
 dwh/dbt/target/
