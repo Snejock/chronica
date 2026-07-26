@@ -81,6 +81,126 @@ pipeline:
     - mapping: |
         root = if this.embedding == null { deleted() } else { this }
 
+    # поиск сюжетов-кандидатов по косинусному расстоянию до storyline-эмбеддингов.
+    # anchor_txt берётся не обязательно у ближайшей storyline сюжета, а у ближайшей ИЗ ТЕХ,
+    # что попали под порог И имеют непустой anchor_txt
+    # определение
+    - branch:
+        processors:
+          - label: postgres_find_candidate_stories
+            sql_raw:
+              driver: postgres
+              dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+              query: |
+                WITH story_matches AS (
+                    SELECT
+                        s.story_id,
+                        s.anchor_txt,
+                        (s.embedding_vct <=> $1::vector)::numeric(4, 3) AS distance_prt
+                    FROM dds.s_story_storylines s
+                    WHERE s.is_active = true
+                      AND s.model_nm = $2
+                      AND s.embedding_vct <=> $1::vector < 0.52
+                ),
+                best_overall AS (
+                    SELECT DISTINCT ON (story_id) story_id, distance_prt
+                    FROM story_matches
+                    ORDER BY story_id, distance_prt
+                ),
+                best_anchor AS (
+                    SELECT DISTINCT ON (story_id) story_id, anchor_txt
+                    FROM story_matches
+                    WHERE anchor_txt IS NOT NULL
+                    ORDER BY story_id, distance_prt
+                )
+                SELECT bo.story_id, bo.distance_prt, sd.story_nm, ba.anchor_txt
+                FROM best_overall bo
+                JOIN dds.s_story_details sd ON sd.story_id = bo.story_id AND sd.language_code = 'en'
+                LEFT JOIN best_anchor ba ON ba.story_id = bo.story_id
+              args_mapping: |
+                root = [
+                  this.embedding.string(),
+                  "embeddinggemma:300m"
+                ]
+        result_map: 'root.candidates = this'
+
+    # среди кандидатов отделяем те, что требуют доп.проверки (есть anchor_txt) —
+    # для них одного эмбеддинга недостаточно, нужна проверка LLM на прямое отношение
+    - mapping: |
+        root = this
+        root.anchored_candidates = this.candidates.filter(c -> c.anchor_txt != null)
+
+    # для кандидатов с anchor_txt спрашиваем LLM, действительно ли новость НАПРЯМУЮ про этот
+    # предмет, а не просто упоминает его в общем контексте (санкционный пакет, отраслевая
+    # сводка, широкая тема сюжета и т.п.)
+    - branch:
+        request_map: |
+          let system_instruction = """
+            You are a news relevance classifier. You are given a news article and a list of
+            specific subjects. For each subject, decide whether the news is DIRECTLY about
+            that subject - not merely adjacent to it, related through a shared industry,
+            sector, country, or broader context, or part of a multi-entity list or package
+            that happens to name it only in passing (for example, a sanctions package naming
+            dozens of unrelated organizations, or a sector-wide roundup).
+
+            Return strict JSON only:
+            {"assessments": [{"story_id": ..., "is_relevant": true|false, "reason_txt": "..."}, ...]}
+            One assessment per subject listed. reason_txt is a brief 1-sentence justification in Russian.
+          """
+
+          let prompt_text = """
+            News title: """ + this.title_txt.string().or("") + """
+            News summary: """ + this.summary_txt.string().or("") + """
+
+            Subjects to assess:
+            """ + this.anchored_candidates.map_each(c -> {
+                    "story_id": c.story_id,
+                    "subject": c.anchor_txt
+                  }).string() + """
+
+            Your answer (JSON only):
+          """
+
+          root = if this.anchored_candidates.length() == 0 { deleted() } else {
+            {
+              "model": "deepseek-v4-flash",
+              "stream": false,
+              "temperature": 0.0,
+              "top_p": 0.1,
+              "response_format": { "type": "json_object" },
+              "messages": [
+                { "role": "system", "content": $system_instruction },
+                { "role": "user",   "content": $prompt_text }
+              ]
+            }
+          }
+        processors:
+          - label: http_llm_anchor_relevance
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM anchor-relevance check failed: ${! error() }"
+          - mapping: |
+              let raw = this.choices.index(0).message.content.parse_json().catch(null)
+              root.assessments = if $raw == null { [] } else { $raw.assessments.or([]) }
+        result_map: 'root.assessments = this.assessments'
+
+    # итоговый список подтверждённых сюжетов: сюжеты без anchor_txt — как есть,
+    # сюжеты с anchor_txt — только если LLM подтвердил прямое отношение к этому предмету
+    - mapping: |
+        root = this
+        let confirmed_anchor_ids = this.assessments.or([]).filter(a -> a.is_relevant == true).map_each(a -> a.story_id)
+        root.confirmed_candidates = this.candidates.filter(c -> c.anchor_txt == null || $confirmed_anchor_ids.contains(c.story_id))
+
     - mapping: |
         let vec_size = this.embedding.length().string() + " dims"
         meta log_msg = "[✅ EMBEDDED] Link: %s | %s | Vct: %s | Title: %s".format(
@@ -90,6 +210,13 @@ pipeline:
     - log:
         level: INFO
         message: '${! meta("log_msg") }'
+
+    - switch:
+        - check: 'this.anchored_candidates.length() > 0'
+          processors:
+            - log:
+                level: INFO
+                message: '[🧠 ANCHOR CHECK] Link: ${! this.news_link.string() } | assessments: ${! this.assessments.string() } | confirmed: ${! this.confirmed_candidates.map_each(c -> c.story_id).string() }'
 
 output:
   label: load_dds_s_news_embeddings
@@ -120,36 +247,23 @@ output:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            WITH story AS (
-                SELECT story_id, model_nm, embedding_vct
-                FROM dds.s_story_storylines
-                WHERE is_active = true
-                  AND model_nm = $3
-            ),
-            ranked AS (
-                SELECT
-                    s.story_id,
-                    s.model_nm,
-                    (s.embedding_vct <=> $2::vector)::numeric(4, 3) AS distance_prt,
-                    row_number() OVER (PARTITION BY s.story_id ORDER BY s.embedding_vct <=> $2::vector) AS rn
-                FROM story s
-                WHERE s.embedding_vct <=> $2::vector < 0.52
-            )
             INSERT INTO dds.t_story_news (story_id, news_id, model_nm, published_dttm, distance_prt)
             SELECT
-                r.story_id,
+                (c ->> 'story_id')::integer,
                 xxh64($1),
-                r.model_nm,
+                $3,
                 h.published_dttm,
-                r.distance_prt
-            FROM ranked r
+                (c ->> 'distance_prt')::numeric(4, 3)
+            FROM jsonb_array_elements($2::jsonb) AS c
             JOIN dds.h_news h ON h.news_id = xxh64($1)
-            WHERE r.rn = 1
             ON CONFLICT (story_id, news_id, model_nm) DO NOTHING;
           args_mapping: |
             root = [
               this.news_link.string().or(""),
-              this.embedding.string(),
+              this.confirmed_candidates.map_each(c -> {
+                "story_id": c.story_id,
+                "distance_prt": c.distance_prt
+              }).string(),
               "embeddinggemma:300m"
             ]
           batching:
