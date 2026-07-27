@@ -1,38 +1,29 @@
 -- DROP VIEW IF EXISTS bds.b_story_unews_texts;
 CREATE OR REPLACE VIEW bds.b_story_unews_texts AS
-WITH
-    storyline AS (
-        SELECT story_id, embedding_vct
-        FROM dds.s_story_storylines
-        WHERE is_active = true
-    ),
-    news AS (
-        SELECT
-            un.*
-            , sl.story_id
-            , sl.embedding_vct <=> un.embedding_vct AS distance_prt
-            , row_number() OVER (PARTITION BY sl.story_id, un.news_id, un.language_code
-                                 ORDER BY sl.embedding_vct <=> un.embedding_vct) AS rn
-        FROM bds.b_unews un
-        JOIN storyline sl ON un.embedding_vct <=> sl.embedding_vct < 0.52
-    )
+-- связь story<->news взята из dds.t_story_news (anchor/LLM-проверенная в
+-- LOAD_DDS_S_NEWS_EMBEDDINGS.yaml)
+-- bds.b_unews является источником текста - он уже схлопывает почти дублирующиеся
+-- новости с разных фидов (см. uniq_news в 011_create_view_bds.b_unews.sql).
+-- джойн по (news_id, model_nm)
 SELECT
-    n.published_dttm
-    , n.story_id
+    u.published_dttm
+    , tsn.story_id
     , sd.story_nm
-    , n.feed_nm
-    , n.language_code
-    , n.news_id
+    , u.feed_nm
+    , u.language_code
+    , u.news_id
     , CASE
-        WHEN right(trim(n.title_txt), 1) IN ('.', '?', '!')
-            THEN n.title_txt || ' ' || n.summary_txt
-        ELSE n.title_txt || '. ' || n.summary_txt
+        WHEN right(trim(u.title_txt), 1) IN ('.', '?', '!')
+            THEN u.title_txt || ' ' || u.summary_txt
+        ELSE u.title_txt || '. ' || u.summary_txt
       END AS news_txt
-FROM news n
+FROM bds.b_unews u
+JOIN dds.t_story_news tsn
+    ON tsn.news_id = u.news_id
+   AND tsn.model_nm = u.model_nm
 JOIN dds.s_story_details sd
-    ON sd.story_id = n.story_id
-   AND sd.language_code = n.language_code
+    ON sd.story_id = tsn.story_id
+   AND sd.language_code = u.language_code
    AND sd.is_active = true
-WHERE n.rn = 1
-ORDER BY n.published_dttm DESC
+ORDER BY u.published_dttm DESC
 ;
