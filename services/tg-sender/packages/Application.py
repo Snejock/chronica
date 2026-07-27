@@ -26,11 +26,13 @@ class Application:
         self.tg_provider = TelegramProvider(config=self.config)
 
     async def processing(self, key: str, data: dict) -> None:
-        """Отправка одной новости подписанного сюжета в Telegram."""
+        """Отправка одной новости в Telegram, с учётом всех сюжетов, к которым она относится."""
         try:
             chat_id = int(data["channel_link"])
             language_code = data.get("language_code") or DEFAULT_LOCALE
-            story_nm = html.escape(data.get("story_nm") or "")
+            story_names = [html.escape(s.get("story_nm") or "") for s in data.get("stories") or [] if s.get("story_nm")]
+            story_nm = story_names[0] if story_names else ""
+            other_stories_nm = story_names[1:]
             title_txt = html.escape(data.get("title_txt") or "")
             summary_txt = html.escape(data.get("summary_txt") or "")
             feed_nm = html.escape(data.get("feed_nm") or FEED_FALLBACK_NM.get(language_code, FEED_FALLBACK_NM[DEFAULT_LOCALE]))
@@ -52,6 +54,11 @@ class Application:
                 meta = f"{meta} · {link}" if meta else link
             if meta:
                 caption = f"{caption}\n\n{meta}"
+
+            # список остальных сюжетов, к которым тоже относится новость - свёрнут по умолчанию
+            if other_stories_nm:
+                stories_list = "\n".join(f"• {nm}" for nm in other_stories_nm)
+                caption = f"{caption}\n\n<blockquote expandable>Также относится к:\n{stories_list}</blockquote>"
 
             image_url = data.get("image_url") or ""
             if image_url:

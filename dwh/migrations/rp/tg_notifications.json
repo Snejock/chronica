@@ -8,13 +8,26 @@
       "type": "string"
     },
     {
-      "name": "story_id",
-      "type": "int"
-    },
-    {
-      "name": "story_nm",
-      "type": "string",
-      "default": ""
+      "name": "stories",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "story_ref",
+          "fields": [
+            {
+              "name": "story_id",
+              "type": "int"
+            },
+            {
+              "name": "story_nm",
+              "type": "string",
+              "default": ""
+            }
+          ]
+        }
+      },
+      "default": []
     },
     {
       "name": "news_id",

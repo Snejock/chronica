@@ -24,12 +24,9 @@ pipeline:
               LEFT JOIN dds.s_subscriber_details sd
                    ON sd.subscriber_id = ss.subscriber_id
               WHERE ss.is_active = true
-          )
-          SELECT * FROM (
-              -- одна новость может входить в несколько историй, на которые подписан
-              -- один и тот же subscriber - DISTINCT ON схлопывает такие строки в одну,
-              -- отдавая историю с наименьшим story_id, чтобы не слать дубли в Telegram
-              SELECT DISTINCT ON (s.subscriber_id, sunt.news_id)
+          ),
+          candidates AS (
+              SELECT
                   s.channel_link
                   , s.subscriber_id
                   , s.story_id
@@ -58,13 +55,42 @@ pipeline:
               LEFT JOIN dds.d_rss_feeds rf ON rf.feed_id = h.feed_id
               WHERE h.published_dttm > s.subscribed_dttm
                 AND h.published_dttm > now() - interval '1' day
-                -- анти-джойн на уровне (subscriber, news), а не (subscriber, story, news):
+                -- анти-джойн на уровне (subscriber, news):
                 -- новость уже отправленная подписчику по любой из историй больше не выбирается
                 AND NOT EXISTS (
                   SELECT 1 FROM dds.t_story_subscriber_news x
                   WHERE x.subscriber_id = s.subscriber_id AND x.news_id = sunt.news_id)
-              ORDER BY s.subscriber_id, sunt.news_id, s.story_id
-          ) dedup
+          )
+          SELECT * FROM (
+              -- одна новость может входить в несколько историй, на которые подписан
+              -- один и тот же subscriber - схлопываем их в один массив stories 
+              -- (по нему в tg-sender строится сворачиваемый список)
+              SELECT
+                  channel_link
+                  , subscriber_id
+                  , news_id
+                  , news_link
+                  , published_dttm
+                  , title_txt
+                  , summary_txt
+                  , image_url
+                  , feed_nm
+                  , language_code
+                  -- сначала сюжеты без anchor_txt (общие), затем с наименьшим story_id -
+                  -- первый элемент массива становится заголовком сообщения в tg-sender
+                  , jsonb_agg(jsonb_build_object('story_id', c.story_id, 'story_nm', c.story_nm)
+                              ORDER BY coalesce(sa.has_anchor, false), c.story_id) AS stories
+              FROM candidates c
+              LEFT JOIN (
+                  SELECT story_id, bool_or(anchor_txt IS NOT NULL) AS has_anchor
+                  FROM dds.s_story_storylines
+                  WHERE is_active = true
+                  GROUP BY story_id
+              ) sa ON sa.story_id = c.story_id
+              GROUP BY
+                  channel_link, subscriber_id, news_id, news_link, published_dttm,
+                  title_txt, summary_txt, image_url, feed_nm, language_code
+          ) grouped
           ORDER BY published_dttm
           LIMIT 50
 
@@ -75,6 +101,11 @@ pipeline:
     # unarchive разбивает этот массив на отдельные сообщения
     - unarchive:
         format: json_array
+
+    # jsonb-колонка stories приходит из postgres строкой, разбираем в массив
+    - mapping: |
+        root = this
+        root.stories = this.stories.parse_json().catch([])
 
     - mapping: |
         meta key = this.subscriber_id.string() + ":" + this.news_id.string()
@@ -92,8 +123,7 @@ output:
         processors:
           - mapping: |
               root.channel_link = this.channel_link.string()
-              root.story_id = this.story_id
-              root.story_nm = this.story_nm.string().or("")
+              root.stories = this.stories
               root.news_id = this.news_id.string()
               root.news_link = this.news_link.string().or("")
               root.published_dttm = this.published_dttm.string().or("")
@@ -119,12 +149,13 @@ output:
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
             INSERT INTO dds.t_story_subscriber_news (subscriber_id, story_id, news_id)
-            VALUES ($1, $2, $3)
+            SELECT $1, (s ->> 'story_id')::integer, $3
+            FROM jsonb_array_elements($2::jsonb) AS s
             ON CONFLICT (subscriber_id, story_id, news_id) DO NOTHING;
           args_mapping: |
             root = [
               this.subscriber_id,
-              this.story_id,
+              this.stories.string(),
               this.news_id.string()
             ]
           batching:
