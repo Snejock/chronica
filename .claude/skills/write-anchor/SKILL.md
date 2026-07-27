@@ -1,5 +1,5 @@
 ---
-name: write-anchor-txt
+name: write-anchor
 description: Decide whether a dds.s_story_storylines row needs anchor_txt and how to phrase it. Use whenever adding or reviewing storylines for dds.s_story_storylines (new stories, new storylines on an existing story, or auditing existing ones for mismatched news).
 ---
 
