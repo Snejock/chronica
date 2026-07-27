@@ -102,7 +102,7 @@ Common periodic-pipeline shape:
 → output.sql_raw (INSERT ... ON CONFLICT ... DO UPDATE)`.
 
 Postgres DSN is always `postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable`.
-In-pipeline comments are written in English — keep that convention when editing.
+In-pipeline comments are written in Russian — keep that convention when editing.
 
 ## LLM
 
