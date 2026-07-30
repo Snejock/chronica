@@ -81,6 +81,32 @@ pipeline:
     - mapping: |
         root = if this.embedding == null { deleted() } else { this }
 
+    # поиск ближайшей уже загруженной новости: если она ближе 0.20 — текущая новость дубль.
+    - branch:
+        processors:
+          - label: postgres_find_duplicate
+            sql_raw:
+              driver: postgres
+              dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+              query: |
+                SELECT (e.embedding_vct <=> $1::vector)::numeric(4, 3) AS distance_prt
+                FROM dds.s_news_embeddings e
+                WHERE e.model_nm = $2
+                  AND e.news_id <> xxh64($3)
+                ORDER BY e.embedding_vct <=> $1::vector
+                LIMIT 1
+              args_mapping: |
+                root = [
+                  this.embedding.string(),
+                  "embeddinggemma:300m",
+                  this.news_link.string().or("")
+                ]
+        result_map: 'root.nearest_prt = this.index(0).distance_prt.catch(null)'
+
+    - mapping: |
+        root = this
+        root.is_unique = this.nearest_prt == null || this.nearest_prt.number() >= 0.20
+
     # поиск сюжетов-кандидатов по косинусному расстоянию до storyline-эмбеддингов.
     # anchor_txt берётся не обязательно у ближайшей storyline сюжета, а у ближайшей ИЗ ТЕХ,
     # что попали под порог И имеют непустой anchor_txt
@@ -241,6 +267,35 @@ output:
           batching:
             count: 5
             period: 1s
+
+      # уникальные новости пишутся в bds слой, вместе с теми языками,
+      # что уже доехали в dds.s_news_texts
+      - label: out_pg_b_unews
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO bds.b_unews (
+              news_id, published_dttm, feed_nm, language_code, title_txt, summary_txt, model_nm, embedding_vct
+            )
+            SELECT h.news_id, h.published_dttm, f.feed_nm, s.language_code
+                 , s.title_txt, s.summary_txt, $2, $3::vector
+            FROM dds.h_news h
+            JOIN dds.d_rss_feeds f  ON f.feed_id = h.feed_id
+            JOIN dds.s_news_texts s ON s.news_id = h.news_id AND s.language_code IN ('en', 'ru')
+            WHERE h.news_id = xxh64($1)
+            ON CONFLICT (news_id, language_code, model_nm) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.news_link.string().or(""),
+              "embeddinggemma:300m",
+              this.embedding.string()
+            ]
+          batching:
+            count: 5
+            period: 1s
+        processors:
+          - mapping: 'root = if this.is_unique { this } else { deleted() }'
 
       - label: out_pg_t_story_news
         sql_raw:

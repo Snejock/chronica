@@ -1,20 +1,64 @@
 input:
   generate:
-    interval: "20m"
+    interval: "5m"
     mapping: 'root = {}'
 
 pipeline:
   processors:
-    - label: postgres
+    # добор недостающих переводов
+    - label: postgres_backfill_languages
       sql_raw:
         driver: postgres
         dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
-          REFRESH MATERIALIZED VIEW CONCURRENTLY bds.b_unews;
+          INSERT INTO bds.b_unews (
+            news_id, published_dttm, feed_nm, language_code, title_txt, summary_txt, model_nm, embedding_vct
+          )
+          SELECT b.news_id, b.published_dttm, b.feed_nm, s.language_code
+               , s.title_txt, s.summary_txt, b.model_nm, b.embedding_vct
+          FROM bds.b_unews b
+          JOIN dds.s_news_texts s ON s.news_id = b.news_id AND s.language_code IN ('en', 'ru')
+          WHERE b.published_dttm > now() - interval '1 day'
+          ON CONFLICT (news_id, language_code, model_nm) DO NOTHING;
 
     - log:
         level: INFO
-        message: '[✅ REFRESHED] bds.b_unews'
+        message: '[✅ BACKFILLED LANGUAGES] bds.b_unews'
+
+    # добор пропущенных новостей: эмбеддинги, загруженные бэкфиллом
+    # (RELOAD_DDS_S_NEWS_EMBEDDINGS.yaml, он не принимает решений об уникальности) либо
+    # потерянные при рестарте стриминга. Решение об уникальности пересчитывается здесь же
+    # через тот же kNN по HNSW-индексу, что и в LOAD_DDS_S_NEWS_EMBEDDINGS.yaml
+    - label: postgres_backfill_missing
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          INSERT INTO bds.b_unews (
+            news_id, published_dttm, feed_nm, language_code, title_txt, summary_txt, model_nm, embedding_vct
+          )
+          SELECT h.news_id, h.published_dttm, f.feed_nm, s.language_code
+               , s.title_txt, s.summary_txt, e.model_nm, e.embedding_vct
+          FROM dds.s_news_embeddings e
+          JOIN dds.h_news h       ON h.news_id = e.news_id
+          JOIN dds.d_rss_feeds f  ON f.feed_id = h.feed_id
+          JOIN dds.s_news_texts s ON s.news_id = e.news_id AND s.language_code IN ('en', 'ru')
+          CROSS JOIN LATERAL (
+              SELECT (e2.embedding_vct <=> e.embedding_vct)::numeric(4, 3) AS distance_prt
+              FROM dds.s_news_embeddings e2
+              WHERE e2.model_nm = e.model_nm
+                AND e2.news_id <> e.news_id
+              ORDER BY e2.embedding_vct <=> e.embedding_vct
+              LIMIT 1
+          ) nearest
+          WHERE e._loaded_dttm > now() - interval '1 day'
+            AND nearest.distance_prt >= 0.20
+            AND NOT EXISTS (SELECT 1 FROM bds.b_unews b WHERE b.news_id = e.news_id)
+          ON CONFLICT (news_id, language_code, model_nm) DO NOTHING;
+
+    - log:
+        level: INFO
+        message: '[✅ BACKFILLED MISSING] bds.b_unews'
 
 output:
   drop: {}
