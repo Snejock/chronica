@@ -1,39 +1,19 @@
-DROP MATERIALIZED VIEW IF EXISTS bds.b_unews CASCADE;
-CREATE MATERIALIZED VIEW bds.b_unews AS
-WITH uniq_news AS (
-    SELECT
-        ne.news_id
-        , ne.model_nm
-        , ne.embedding_vct
-    FROM dds.h_news h
-    JOIN dds.s_news_embeddings ne ON h.news_id = ne.news_id
-    WHERE NOT EXISTS (SELECT 1
-                      FROM (SELECT ne2.embedding_vct
-                            FROM dds.h_news h2
-                            JOIN dds.s_news_embeddings ne2 ON h2.news_id = ne2.news_id
-                            WHERE ne.model_nm = ne2.model_nm
-                              AND ne.news_id <> ne2.news_id
-                              AND h.published_dttm >= h2.published_dttm - INTERVAL '1 day'
-                              AND h.published_dttm > h2.published_dttm
-                            ORDER BY ne.embedding_vct <=> ne2.embedding_vct
-                            LIMIT 1) closest_match
-                      WHERE ne.embedding_vct <=> closest_match.embedding_vct < 0.20)
-)
-SELECT
-    now()::timestamptz(0) AS _loaded_dttm
-    , u.news_id
-    , h.published_dttm
-    , d.feed_nm
-    , s.language_code
-    , s.title_txt
-    , s.summary_txt
-    , u.model_nm
-    , u.embedding_vct
-FROM uniq_news u
-JOIN dds.h_news h ON u.news_id = h.news_id
-JOIN dds.d_rss_feeds d ON h.feed_id = d.feed_id
-JOIN dds.s_news_texts s ON u.news_id = s.news_id AND s.language_code IN ('en', 'ru')
-;
+DROP TABLE IF EXISTS bds.b_unews;
+CREATE TABLE bds.b_unews (
+    _loaded_dttm    timestamp(0) with time zone DEFAULT now(),
+    news_id         text NOT NULL,
+    published_dttm  timestamp(0) with time zone,
+    feed_nm         text,
+    language_code   text NOT NULL,
+    title_txt       text,
+    summary_txt     text,
+    model_nm        text NOT NULL,
+    embedding_vct   vector(768),
+
+    CONSTRAINT b_unews__news_id_language_code_model_nm_pk
+        PRIMARY KEY (news_id, language_code, model_nm)
+);
 
 CREATE INDEX b_unews__embedding_vct_idx ON bds.b_unews USING hnsw (embedding_vct vector_cosine_ops);
-CREATE UNIQUE INDEX b_unews__news_id_language_code_model_nm_uidx ON bds.b_unews (news_id, language_code, model_nm); -- необходим для REFRESH MATERIALIZED VIEW CONCURRENTLY
+CREATE INDEX b_unews__published_dttm_idx ON bds.b_unews (published_dttm DESC);
+CREATE UNIQUE INDEX b_unews__news_id_language_code_model_nm_uidx ON bds.b_unews (news_id, language_code, model_nm);

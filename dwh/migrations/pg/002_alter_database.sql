@@ -1,0 +1,1 @@
+ALTER DATABASE core SET hnsw.ef_search = 100;
