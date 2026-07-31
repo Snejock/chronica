@@ -39,7 +39,9 @@ pipeline:
                   AND s.dt >= current_date - INTERVAL '4 day'
             )
 
-    # выборка сюжетов: все заголовки за всё время (полная история для таймлайна)
+    # выборка сюжетов: все заголовки за всё время (полная история для таймлайна),
+    # только для тех, у кого появилась сводка новее последней генерации таймлайна
+    # (иначе LLM пересчитывает всю историю целиком на каждый тик без новых данных)
     - label: postgres
       sql_raw:
         driver: postgres
@@ -50,23 +52,34 @@ pipeline:
               FROM dm.story_summaries_d
               WHERE language_code = 'ru'
                 AND dt >= current_date - INTERVAL '4 day'
+          ),
+          aggregated AS (
+              SELECT
+                  all_d.story_id,
+                  min(sd.story_nm)         AS story_nm,
+                  all_d.language_code,
+                  min(all_d.dt)            AS coverage_from_dt,
+                  max(all_d.dt)            AS coverage_to_dt,
+                  max(all_d._loaded_dttm)  AS latest_summary_dttm,
+                  jsonb_agg(jsonb_build_object(
+                    'dt',          all_d.dt,
+                    'headline_txt', all_d.headline_txt
+                  ) ORDER BY all_d.dt)     AS headlines_json
+              FROM dm.story_summaries_d all_d
+              JOIN recent r ON r.story_id = all_d.story_id
+                  AND r.language_code = all_d.language_code
+              LEFT JOIN dds.s_story_details sd ON sd.story_id = all_d.story_id
+                  AND sd.language_code = all_d.language_code
+              GROUP BY all_d.story_id, all_d.language_code
           )
-          SELECT
-              all_d.story_id,
-              min(sd.story_nm)        AS story_nm,
-              all_d.language_code,
-              min(all_d.dt)           AS coverage_from_dt,
-              max(all_d.dt)           AS coverage_to_dt,
-              jsonb_agg(jsonb_build_object(
-                'dt',          all_d.dt,
-                'headline_txt', all_d.headline_txt
-              ) ORDER BY all_d.dt)    AS headlines_json
-          FROM dm.story_summaries_d all_d
-          JOIN recent r ON r.story_id = all_d.story_id
-              AND r.language_code = all_d.language_code
-          LEFT JOIN dds.s_story_details sd ON sd.story_id = all_d.story_id
-              AND sd.language_code = all_d.language_code
-          GROUP BY all_d.story_id, all_d.language_code
+          SELECT a.story_id, a.story_nm, a.language_code, a.coverage_from_dt, a.coverage_to_dt, a.headlines_json
+          FROM aggregated a
+          WHERE NOT EXISTS (
+              SELECT 1 FROM dm.story_key_events k
+              WHERE k.story_id = a.story_id
+                AND k.language_code = a.language_code
+                AND k._loaded_dttm >= a.latest_summary_dttm
+          )
 
     # разворот батча
     - mapping: |
