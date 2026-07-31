@@ -1,0 +1,145 @@
+input:
+  generate:
+    interval: "5m"
+    mapping: 'root = {}'
+
+pipeline:
+  processors:
+    # пересчитываются только те forecast_id, у которых появились новые строки
+    # в t_forecast_news с последнего расчёта (сравнение по _loaded_dttm). Цепочка
+    # пересчитывается целиком (не только новые строки), т.к. новости иногда доезжают
+    # с задержкой и могут попасть в середину уже посчитанной последовательности —
+    # порядок decay зависит от published_dttm, а не от времени вставки.
+    # приор и forecast_nm в d_forecasts не зависят от language_code (один прогноз —
+    # два перевода), поэтому тяжёлая часть считается один раз на forecast_id, а на
+    # два языка расходится только на финальном INSERT.
+    - label: postgres
+      sql_raw:
+        driver: postgres
+        dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+        query: |
+          WITH RECURSIVE
+              touched AS (
+                  SELECT tn.forecast_id
+                  FROM dds.t_forecast_news tn
+                  GROUP BY tn.forecast_id
+                  HAVING max(tn._loaded_dttm) > COALESCE(
+                      (SELECT max(b._loaded_dttm) FROM bds.b_forecast_posteriors b
+                       WHERE b.forecast_id = tn.forecast_id),
+                      '-infinity'::timestamptz
+                  )
+              ),
+              priors AS (
+                  SELECT DISTINCT ON (forecast_id) forecast_id, p_prior_prt::numeric AS p_prior_prt
+                  FROM dds.d_forecasts
+                  ORDER BY forecast_id, language_code
+              ),
+              ordered_news AS (
+                  SELECT
+                      n.forecast_id,
+                      n.news_id,
+                      n.published_dttm,
+                      n.p_confirm_prt::numeric    AS p_confirm_prt,
+                      n.p_refute_prt::numeric     AS p_refute_prt,
+                      p.p_prior_prt         * 5.0 AS alpha_init,
+                      (1.0 - p.p_prior_prt) * 5.0 AS beta_init,
+                      row_number() OVER (
+                          PARTITION BY n.forecast_id
+                          ORDER BY n.published_dttm
+                      ) AS rn
+                  FROM dds.t_forecast_news n
+                  JOIN priors p ON p.forecast_id = n.forecast_id
+                  WHERE n.forecast_id IN (SELECT forecast_id FROM touched)
+              ),
+              n_max AS (SELECT 15.0::numeric AS val),
+              bayes AS (
+                  SELECT
+                      forecast_id, news_id, published_dttm, p_confirm_prt, p_refute_prt,
+                      alpha_init, beta_init, rn,
+                      alpha_init + greatest(p_confirm_prt - p_refute_prt, 0) * 3.0 AS alpha,
+                      beta_init  + greatest(p_refute_prt - p_confirm_prt, 0) * 3.0 AS beta
+                  FROM ordered_news
+                  WHERE rn = 1
+
+                  UNION ALL
+
+                  SELECT
+                      n.forecast_id, n.news_id, n.published_dttm, n.p_confirm_prt, n.p_refute_prt,
+                      n.alpha_init, n.beta_init, n.rn,
+                      (SELECT
+                          CASE WHEN a_dec + b_dec > nm.val
+                               THEN a_dec * nm.val / (a_dec + b_dec)
+                               ELSE a_dec
+                          END + greatest(n.p_confirm_prt - n.p_refute_prt, 0) * 3.0
+                       FROM n_max nm,
+                       LATERAL (SELECT
+                          n.alpha_init + (b.alpha - n.alpha_init) * exp(
+                              -extract(EPOCH FROM (n.published_dttm - b.published_dttm))::numeric
+                              / (3.0 * 86400) * ln(2.0)
+                          ) AS a_dec,
+                          n.beta_init + (b.beta - n.beta_init) * exp(
+                              -extract(EPOCH FROM (n.published_dttm - b.published_dttm))::numeric
+                              / (3.0 * 86400) * ln(2.0)
+                          ) AS b_dec
+                       ) decayed
+                      ) AS alpha,
+                      (SELECT
+                          CASE WHEN a_dec + b_dec > nm.val
+                               THEN b_dec * nm.val / (a_dec + b_dec)
+                               ELSE b_dec
+                          END + greatest(n.p_refute_prt - n.p_confirm_prt, 0) * 3.0
+                       FROM n_max nm,
+                       LATERAL (SELECT
+                          n.alpha_init + (b.alpha - n.alpha_init) * exp(
+                              -extract(EPOCH FROM (n.published_dttm - b.published_dttm))::numeric
+                              / (3.0 * 86400) * ln(2.0)
+                          ) AS a_dec,
+                          n.beta_init + (b.beta - n.beta_init) * exp(
+                              -extract(EPOCH FROM (n.published_dttm - b.published_dttm))::numeric
+                              / (3.0 * 86400) * ln(2.0)
+                          ) AS b_dec
+                       ) decayed
+                      ) AS beta
+                  FROM ordered_news n
+                  JOIN bayes b
+                      ON b.forecast_id = n.forecast_id
+                     AND b.rn          = n.rn - 1
+              )
+          INSERT INTO bds.b_forecast_posteriors (
+              forecast_id, language_code, forecast_nm, news_id, published_dttm,
+              p_confirm_prt, p_refute_prt, p_posterior_prt, alpha, beta, effective_n,
+              p_lower_95_prt, p_upper_95_prt, _loaded_dttm
+          )
+          SELECT
+              b.forecast_id, f.language_code, f.forecast_nm, b.news_id, b.published_dttm,
+              b.p_confirm_prt, b.p_refute_prt,
+              round((b.alpha / (b.alpha + b.beta))::numeric, 3) AS p_posterior_prt,
+              round(b.alpha::numeric, 2) AS alpha,
+              round(b.beta::numeric, 2)  AS beta,
+              round((b.alpha + b.beta)::numeric, 1) AS effective_n,
+              round((b.alpha / (b.alpha + b.beta)
+                - 1.96 * sqrt(b.alpha * b.beta / ((b.alpha + b.beta)^2 * (b.alpha + b.beta + 1))))::numeric, 3
+              ) AS p_lower_95_prt,
+              round((b.alpha / (b.alpha + b.beta)
+                + 1.96 * sqrt(b.alpha * b.beta / ((b.alpha + b.beta)^2 * (b.alpha + b.beta + 1))))::numeric, 3
+              ) AS p_upper_95_prt,
+              now() AS _loaded_dttm
+          FROM bayes b
+          JOIN dds.d_forecasts f ON f.forecast_id = b.forecast_id
+          ON CONFLICT (forecast_id, language_code, news_id) DO UPDATE SET
+              _loaded_dttm    = now(),
+              p_confirm_prt   = EXCLUDED.p_confirm_prt,
+              p_refute_prt    = EXCLUDED.p_refute_prt,
+              p_posterior_prt = EXCLUDED.p_posterior_prt,
+              alpha           = EXCLUDED.alpha,
+              beta            = EXCLUDED.beta,
+              effective_n     = EXCLUDED.effective_n,
+              p_lower_95_prt  = EXCLUDED.p_lower_95_prt,
+              p_upper_95_prt  = EXCLUDED.p_upper_95_prt;
+
+    - log:
+        level: INFO
+        message: '[✅ RECOMPUTED] bds.b_forecast_posteriors'
+
+output:
+  drop: {}
