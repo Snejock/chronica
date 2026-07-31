@@ -23,6 +23,7 @@ pipeline:
             )
 
     # деактивировать брифы сюжетов без сводок за последние 7 дней
+    # влияет на отображение на фронте брифа для конкретного сюжета
     - label: deactivate_stale
       sql_raw:
         driver: postgres
@@ -38,33 +39,46 @@ pipeline:
                   AND s.dt >= current_date - INTERVAL '6 day'
             )
 
-    # выбор сюжетов со сводками за последние 7 дней
+    # выбор сюжетов со сводками за последние 7 дней, у которых появилась сводка новее,
+    # чем последняя генерация активного брифа (иначе LLM пересчитывает один и тот же
+    # 7-дневный контекст на каждый тик, даже если по сюжету давно ничего не изменилось)
     - label: postgres
       sql_raw:
         driver: postgres
         dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
         query: |
           WITH recent AS (
-              SELECT story_id, language_code, dt, headline_txt, summary_txt
+              SELECT story_id, language_code, dt, headline_txt, summary_txt, _loaded_dttm
               FROM dm.story_summaries_d
               WHERE language_code = 'ru'
                 AND dt >= current_date - INTERVAL '6 day'
+          ),
+          aggregated AS (
+              SELECT
+                  r.story_id,
+                  min(d.story_nm) AS story_nm,
+                  r.language_code,
+                  min(r.dt) AS coverage_from_dt,
+                  max(r.dt) AS coverage_to_dt,
+                  max(r._loaded_dttm) AS latest_summary_dttm,
+                  jsonb_agg(jsonb_build_object(
+                      'dt', r.dt,
+                      'headline_txt', r.headline_txt,
+                      'summary_txt', r.summary_txt
+                  ) ORDER BY r.dt) AS days
+              FROM recent r
+              LEFT JOIN dds.s_story_details d
+                     ON d.story_id = r.story_id AND d.language_code = r.language_code
+              GROUP BY r.story_id, r.language_code
           )
-          SELECT
-              r.story_id,
-              min(d.story_nm) AS story_nm,
-              r.language_code,
-              min(r.dt) AS coverage_from_dt,
-              max(r.dt) AS coverage_to_dt,
-              jsonb_agg(jsonb_build_object(
-                  'dt', r.dt,
-                  'headline_txt', r.headline_txt,
-                  'summary_txt', r.summary_txt
-              ) ORDER BY r.dt) AS days
-          FROM recent r
-          LEFT JOIN dds.s_story_details d
-                 ON d.story_id = r.story_id AND d.language_code = r.language_code
-          GROUP BY r.story_id, r.language_code
+          SELECT a.story_id, a.story_nm, a.language_code, a.coverage_from_dt, a.coverage_to_dt, a.days
+          FROM aggregated a
+          WHERE NOT EXISTS (
+              SELECT 1 FROM dm.story_briefs b
+              WHERE b.story_id = a.story_id
+                AND b.language_code = a.language_code
+                AND b._loaded_dttm >= a.latest_summary_dttm
+          )
 
     # guard + разворот батча
     - mapping: |
