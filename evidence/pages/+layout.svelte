@@ -1,6 +1,6 @@
 <script>
   import { EvidenceDefaultLayout } from '@evidence-dev/core-components';
-  import { setContext } from 'svelte';
+  import { onMount, setContext } from 'svelte';
   import { writable } from 'svelte/store';
   import { page } from '$app/stores';
   import { beforeNavigate, onNavigate, goto } from '$app/navigation';
@@ -10,6 +10,18 @@
   export let data;
 
   showQueries.set(false);
+
+  // Мобильный встроенный браузер Telegram рисует свою панель (Закрыть/⋯) поверх страницы,
+  // её высоту не отдаёт ни один safe-area API для обычных (не мини-апп) ссылок — добавляем
+  // фиксированный отступ вручную, только когда точно определили, что мы внутри Telegram.
+  onMount(() => {
+    const ua = navigator.userAgent || '';
+    const isMobile = /Android|iPhone|iPad/i.test(ua);
+    const isTelegram = /Telegram/i.test(ua) || typeof window.TelegramWebviewProxy !== 'undefined';
+    if (isMobile && isTelegram) {
+      document.documentElement.classList.add('tg-inapp');
+    }
+  });
 
   const breadcrumbStore = writable(null);
   setContext('breadcrumb', breadcrumbStore);
@@ -192,6 +204,9 @@
     flex-direction: column;
     padding-top: env(safe-area-inset-top, 0px);
   }
+  :global(html.tg-inapp) .c-sidebar {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 44px);
+  }
   .c-sidebar-open {
     transform: translateX(0);
   }
@@ -249,6 +264,10 @@
     align-items: center;
     gap: 8px;
     view-transition-name: c-header;
+  }
+  :global(html.tg-inapp) .c-header {
+    height: calc(48px + env(safe-area-inset-top, 0px) + 44px);
+    padding-top: calc(env(safe-area-inset-top, 0px) + 44px);
   }
   :global(::view-transition-old(c-header)),
   :global(::view-transition-new(c-header)) {
