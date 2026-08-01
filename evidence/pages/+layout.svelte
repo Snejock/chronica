@@ -20,6 +20,21 @@
     const isTelegram = /Telegram/i.test(ua) || typeof window.TelegramWebviewProxy !== 'undefined';
     if (isMobile && isTelegram) {
       document.documentElement.classList.add('tg-inapp');
+
+      // Пробуем официальный способ отключить нативный жест "смахнуть вниз = свернуть
+      // приложение" — обычно доступен только зарегистрированным мини-приложениям, но
+      // мост в WebView Telegram общий, так что стоит попробовать и для обычной ссылки.
+      const script = document.createElement('script');
+      script.src = 'https://telegram.org/js/telegram-web-app.js';
+      script.async = true;
+      script.onload = () => {
+        try {
+          const tg = window.Telegram?.WebApp;
+          tg?.ready?.();
+          tg?.disableVerticalSwipes?.();
+        } catch (e) {}
+      };
+      document.head.appendChild(script);
     }
   });
 
