@@ -159,6 +159,11 @@
   {/if}
 </div>
 
+<!-- Выталкивает контент ровно на ту дельту, на которую .c-header вырос сверх базовых 48px
+     (safe-area-inset-top / панель Telegram) — сам .c-header зафиксирован и из потока выпадает,
+     а Evidence резервирует под него статичные 48px. В обычном браузере высота спейсера 0. -->
+<div class="c-header-spacer" aria-hidden="true"></div>
+
 <EvidenceDefaultLayout {data} logo="/logo.svg">
   <slot slot="content" />
 </EvidenceDefaultLayout>
@@ -268,6 +273,13 @@
   :global(html.tg-inapp) .c-header {
     height: calc(48px + env(safe-area-inset-top, 0px) + 44px);
     padding-top: calc(env(safe-area-inset-top, 0px) + 44px);
+  }
+  .c-header-spacer {
+    height: env(safe-area-inset-top, 0px);
+    flex-shrink: 0;
+  }
+  :global(html.tg-inapp) .c-header-spacer {
+    height: calc(env(safe-area-inset-top, 0px) + 44px);
   }
   :global(::view-transition-old(c-header)),
   :global(::view-transition-new(c-header)) {
