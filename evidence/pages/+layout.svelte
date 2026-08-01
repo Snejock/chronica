@@ -56,9 +56,10 @@
   $: storyId = $page.params?.story;
   $: day = $page.params?.day;
   $: parentUrl = day ? `/stories/${storyId}` : storyId ? '/stories' : '/';
+  $: isHome = $page.url.pathname === '/';
   $: if (tgWebApp) {
-    if (parentUrl) tgWebApp.BackButton.show();
-    else tgWebApp.BackButton.hide();
+    if (isHome) tgWebApp.BackButton.hide();
+    else tgWebApp.BackButton.show();
   }
 
   let _goingUp = false;
