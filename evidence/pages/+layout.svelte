@@ -89,6 +89,8 @@
   <meta name="apple-mobile-web-app-title" content="Chronica" />
   <link rel="apple-touch-icon" href="/logo.svg" />
   <meta name="theme-color" content="#faf9f7" />
+  <!-- viewport-fit=cover: без этого env(safe-area-inset-top) всегда 0, и фикс ниже для Telegram WebView не сработает -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 </svelte:head>
 
 <!-- Затемнение -->
@@ -188,6 +190,7 @@
     box-shadow: 4px 0 32px rgba(0, 0, 0, 0.08);
     display: flex;
     flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
   }
   .c-sidebar-open {
     transform: translateX(0);
@@ -233,13 +236,17 @@
   .c-header {
     position: fixed;
     top: 0; left: 0; right: 0;
-    height: 48px;
+    box-sizing: border-box;
+    /* высота растёт на safe-area-inset-top (статус-бар в Telegram WebView и т.п.),
+       содержимое хедера при этом остаётся тех же ~48px за счёт padding-top */
+    height: calc(48px + env(safe-area-inset-top, 0px));
+    padding: 0 12px;
+    padding-top: env(safe-area-inset-top, 0px);
     background: #ffffff;
     border-bottom: 1px solid #f0ede9;
     z-index: 50;
     display: flex;
     align-items: center;
-    padding: 0 12px;
     gap: 8px;
     view-transition-name: c-header;
   }
