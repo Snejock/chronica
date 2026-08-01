@@ -169,9 +169,11 @@
       <rect x="2" y="14" width="16" height="2" rx="1" fill="#57534e"/>
     </svg>
   </button>
-  {#if storyId}
+  {#if storyId || $page.url.pathname === '/stories'}
     <nav class="c-breadcrumb">
-      {#if !day}
+      {#if !storyId}
+        <span class="c-current">Сюжеты</span>
+      {:else if !day}
         <a href="/stories">Сюжеты</a>
         {#if $breadcrumbStore?.storyName}
           <span class="c-sep">›</span>
