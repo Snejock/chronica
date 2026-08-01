@@ -553,6 +553,10 @@ hide_breadcrumbs: true
     cursor: grab;
     scrollbar-width: none;
     -ms-overflow-style: none;
+    /* Явно отдаём вертикальный свайп родителю (странице): без этого браузер иногда
+       "запирает" жест внутри горизонтального скроллера, документ не скроллится,
+       и Telegram WebView читает это как команду свернуть приложение. */
+    touch-action: pan-x;
   }
   .forecast-carousel::-webkit-scrollbar,
   .chronicle-carousel::-webkit-scrollbar,
