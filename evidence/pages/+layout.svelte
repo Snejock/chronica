@@ -197,6 +197,39 @@
   <slot slot="content" />
 </EvidenceDefaultLayout>
 
+<!-- Нижний "остров" — быстрая навигация -->
+<nav class="c-island" aria-label="Основная навигация">
+  <a href="/" class="c-island-item" class:c-island-active={$page.url.pathname === '/'}>
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
+      <path d="M3 9.5L10 3L17 9.5V17H13V13H7V17H3V9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    <span>Главная</span>
+  </a>
+  <a href="/stories" class="c-island-item" class:c-island-active={$page.url.pathname.startsWith('/stories')}>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5l6.74-6.76z"/>
+      <line x1="16" y1="8" x2="2" y2="22"/>
+      <line x1="17.5" y1="15" x2="9" y2="15"/>
+    </svg>
+    <span>Сюжеты</span>
+  </a>
+  <div class="c-island-item c-island-disabled" aria-disabled="true" tabindex="-1">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+    <span>Поддержка</span>
+  </div>
+  <div class="c-island-item c-island-disabled" aria-disabled="true" tabindex="-1">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+    <span>Профиль</span>
+  </div>
+</nav>
+
 <style>
   :global(header) { display: none !important; }
   :global(html), :global(body) {
@@ -207,6 +240,8 @@
   :global(.antialiased > div) {
     padding-left: 12px !important;
     padding-right: 12px !important;
+    /* Место под плавающий остров-навигацию снизу (64px высота + отступ от края + запас) */
+    padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   /* Затемнение */
@@ -359,6 +394,56 @@
     flex-shrink: 1;
   }
   .c-day { color: #15140F; white-space: nowrap; flex-shrink: 0; }
+
+  /* Нижний остров-навигация */
+  .c-island {
+    position: fixed;
+    left: 50%;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    z-index: 40;
+    display: flex;
+    align-items: stretch;
+    width: calc(100% - 24px);
+    max-width: 360px;
+    height: 64px;
+    padding: 6px;
+    border-radius: 28px;
+    background: rgba(250, 249, 247, 0.72);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 8px 32px rgba(21, 20, 15, 0.14), 0 1px 2px rgba(21, 20, 15, 0.06);
+  }
+  .c-island-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border-radius: 22px;
+    text-decoration: none;
+    color: #57534e;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+  .c-island-item span {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1;
+  }
+  a.c-island-item:active {
+    background: rgba(21, 20, 15, 0.06);
+  }
+  .c-island-active {
+    color: #C0401C;
+  }
+  .c-island-disabled {
+    color: #a8a29e;
+    opacity: 0.55;
+    cursor: default;
+  }
 
   @keyframes slide-in-right { from { transform: translateX(100%); } }
   @keyframes slide-out-left  { to   { transform: translateX(-28%); opacity: 0.6; } }
