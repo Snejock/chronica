@@ -758,7 +758,7 @@ ORDER BY day
 ## Ключевые события
 
 {#if keyEventLayout.items.length > 0}
-<div class="not-prose mt-2 mb-8" style="position:relative; margin-left:-12px; margin-right:-12px"
+<div class="not-prose mt-2 mb-8" style="position:relative; margin-left:-12px; margin-right:-12px; isolation:isolate"
      on:click={() => { openEventId = null; }}>
   <!-- Fade-маски по краям — намёк на прокрутку -->
   <div class="ke-fade-l"></div>

@@ -404,7 +404,7 @@
     left: 50%;
     bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
-    z-index: 40;
+    z-index: 60;
     display: flex;
     align-items: stretch;
     width: calc(100% - 24px);
