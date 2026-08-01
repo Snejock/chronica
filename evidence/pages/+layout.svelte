@@ -11,6 +11,10 @@
 
   showQueries.set(false);
 
+  // Ссылается на window.Telegram.WebApp после загрузки скрипта — используется в реактивном
+  // блоке ниже (после объявления parentUrl), чтобы показывать/прятать нативную кнопку "назад".
+  let tgWebApp = null;
+
   // Мобильный встроенный браузер Telegram рисует свою панель (Закрыть/⋯) поверх страницы,
   // её высоту не отдаёт ни один safe-area API для обычных (не мини-апп) ссылок — добавляем
   // фиксированный отступ вручную, только когда точно определили, что мы внутри Telegram.
@@ -30,8 +34,14 @@
       script.onload = () => {
         try {
           const tg = window.Telegram?.WebApp;
-          tg?.ready?.();
-          tg?.disableVerticalSwipes?.();
+          if (!tg) return;
+          tg.ready?.();
+          tg.disableVerticalSwipes?.();
+          // Свайп от левого края в Telegram зарезервирован системой (см. документацию
+          // Telegram Mini Apps — "go back" жест на вебвью официально не поддерживается),
+          // поэтому вместо своего edge-свайпа используем нативную кнопку "назад".
+          tg.BackButton?.onClick(() => { if (parentUrl) goto(parentUrl); });
+          tgWebApp = tg;
         } catch (e) {}
       };
       document.head.appendChild(script);
@@ -46,6 +56,10 @@
   $: storyId = $page.params?.story;
   $: day = $page.params?.day;
   $: parentUrl = day ? `/stories/${storyId}` : storyId ? '/stories' : '/';
+  $: if (tgWebApp) {
+    if (parentUrl) tgWebApp.BackButton.show();
+    else tgWebApp.BackButton.hide();
+  }
 
   let _goingUp = false;
   beforeNavigate((nav) => {
