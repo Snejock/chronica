@@ -11,6 +11,56 @@
 
   showQueries.set(false);
 
+  // Та же "печатающаяся" анимация домена, что и на / (pages/index.md), но со своим
+  // data-атрибутом — document.querySelectorAll там ищет [data-chronica-flag] по всему
+  // документу, и без разных имён оба onMount запустили бы два таймера на одном узле.
+  onMount(() => {
+    const WORDS = ["AI", "MONEY", "TECH", "WAR", "LIFE", "WORLD", "ART", "DATA"];
+    const TYPE_MS   = 95;
+    const DELETE_MS = 55;
+    const HOLD_MS   = 1300;
+    const BLANK_MS  = 320;
+
+    document.querySelectorAll('[data-cg-flag]').forEach((el) => {
+      const flag     = el.closest('.c-desktop-gate-flag');
+      const caret    = flag && flag.querySelector('.c-desktop-gate-caret');
+      const setSolid = () => caret && caret.classList.add('is-typing');
+      const setBlinking = () => {
+        if (!caret) return;
+        caret.classList.remove('is-typing');
+        caret.style.animation = 'none';
+        void caret.offsetWidth;
+        caret.style.animation = '';
+      };
+
+      let idx = 0, text = el.textContent || WORDS[0], phase = "hold";
+      const tick = () => {
+        const word = WORDS[idx];
+        if (phase === "typing") {
+          setSolid();
+          if (text.length < word.length) {
+            text = word.slice(0, text.length + 1);
+            el.textContent = text;
+            setTimeout(tick, TYPE_MS);
+          } else { phase = "hold"; setBlinking(); setTimeout(tick, HOLD_MS); }
+        } else if (phase === "hold") {
+          phase = "deleting"; setTimeout(tick, DELETE_MS);
+        } else if (phase === "deleting") {
+          setSolid();
+          if (text.length > 0) {
+            text = text.slice(0, -1);
+            el.textContent = text;
+            setTimeout(tick, DELETE_MS);
+          } else { phase = "blank"; setBlinking(); setTimeout(tick, BLANK_MS); }
+        } else if (phase === "blank") {
+          idx = (idx + 1) % WORDS.length;
+          phase = "typing"; tick();
+        }
+      };
+      setTimeout(tick, HOLD_MS);
+    });
+  });
+
   // Ссылается на window.Telegram.WebApp после загрузки скрипта — используется в реактивном
   // блоке ниже (после объявления parentUrl), чтобы показывать/прятать нативную кнопку "назад".
   let tgWebApp = null;
@@ -152,7 +202,9 @@
   <div class="c-desktop-gate-inner">
     <span class="c-desktop-gate-flag">
       <span class="c-desktop-gate-word">CHRONICA</span>
-      <span class="c-desktop-gate-badge">.AI</span>
+      <span class="c-desktop-gate-badge">
+        <span class="c-desktop-gate-dot">.</span><span class="c-desktop-gate-suffix" data-cg-flag>AI</span><span class="c-desktop-gate-caret" aria-hidden="true"></span>
+      </span>
     </span>
     <p class="c-desktop-gate-tagline">
       Собираем материалы из открытых источников, группируем по темам и формируем
@@ -601,6 +653,8 @@
     color: #16140F;
   }
   .c-desktop-gate-badge {
+    display: inline-flex;
+    align-items: center;
     font-family: 'IBM Plex Mono', monospace;
     font-weight: 500;
     font-size: 15px;
@@ -609,6 +663,23 @@
     color: #F1EADB;
     background: #C0401C;
     padding: 7px 10px;
+    min-width: 6em;
+  }
+  .c-desktop-gate-dot { opacity: 0.72; }
+  .c-desktop-gate-suffix { white-space: pre; }
+  .c-desktop-gate-caret {
+    display: inline-block;
+    width: 0.09em;
+    height: 1.05em;
+    background: #F1EADB;
+    margin-left: 0.16em;
+    animation: cg-blink 1.06s ease infinite;
+  }
+  :global(.c-desktop-gate-caret.is-typing) { animation: none; opacity: 1; }
+  @keyframes cg-blink {
+    0%,  45% { opacity: 1; }
+    55%, 95% { opacity: 0; }
+    100%     { opacity: 1; }
   }
   .c-desktop-gate-tagline {
     margin: 0;
