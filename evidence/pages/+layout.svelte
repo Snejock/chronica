@@ -210,9 +210,6 @@
       Собираем материалы из открытых источников, группируем по темам и формируем
       ежедневные сводки — чтобы следить за событиями без лишнего шума.
     </p>
-    <p class="c-desktop-gate-note">
-      Chronica делается для телефона — самый удобный способ читать сюжеты сейчас в Telegram.
-    </p>
     <a href="https://t.me/signalfire_aibot" target="_blank" rel="noopener" class="c-desktop-gate-cta">
       Открыть в Telegram →
     </a>
@@ -686,11 +683,6 @@
     font-size: 16px;
     line-height: 1.6;
     color: #44403c;
-  }
-  .c-desktop-gate-note {
-    margin: 0;
-    font-size: 13px;
-    color: #a8a29e;
   }
   .c-desktop-gate-cta {
     display: inline-block;
