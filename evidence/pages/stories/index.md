@@ -80,7 +80,13 @@ hide_breadcrumbs: true
     return `${n} ${many}`;
   }
 
-  let activeCategory = null;
+  // Читаем ?category= напрямую из window.location, а не через $page — страница
+  // пререндерится статически (evidence build = SvelteKit prerender), а во время
+  // пререндера window недоступен, так что на сервере activeCategory просто останется
+  // null и подставится дефолтная категория ниже.
+  let activeCategory = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('category')
+    : null;
 
   let pageEl;
 
@@ -196,9 +202,8 @@ hide_breadcrumbs: true
   });
 
   $: categories = q_categories.filter(c => enriched.some(s => s.category_nm === c.category_nm));
-  $: if (activeCategory === null && categories.length > 0) {
-    const fromUrl = $page.url.searchParams.get('category');
-    activeCategory = categories.some(c => c.category_nm === fromUrl) ? fromUrl : categories[0].category_nm;
+  $: if (categories.length > 0 && !categories.some(c => c.category_nm === activeCategory)) {
+    activeCategory = categories[0].category_nm;
   }
   $: visible = enriched.filter(s => s.category_nm === activeCategory);
 
