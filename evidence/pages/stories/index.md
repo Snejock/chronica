@@ -4,8 +4,6 @@ hide_breadcrumbs: true
 ---
 
 <script>
-  import { page } from '$app/stores';
-
   function absUrl(url) {
     if (!url) return url;
     return /^https?:\/\//i.test(url) ? url : 'https://' + url;
