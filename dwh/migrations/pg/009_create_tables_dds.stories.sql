@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS dds.s_story_details (
     geo_lat         numeric(9, 6),
     geo_lon         numeric(9, 6),
     is_active       boolean DEFAULT true,
+    category_nm     text,
     CONSTRAINT s_story_details__story_id_language_code_pk
         PRIMARY KEY (story_id, language_code)
 );

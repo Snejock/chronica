@@ -80,6 +80,8 @@ hide_breadcrumbs: true
     return `${n} ${many}`;
   }
 
+  let activeCategory = null;
+
   let pageEl;
 
   onMount(() => {
@@ -193,6 +195,10 @@ hide_breadcrumbs: true
     return b.total30 - a.total30;
   });
 
+  $: categories = q_categories.filter(c => enriched.some(s => s.category_nm === c.category_nm));
+  $: if (activeCategory === null && categories.length > 0) activeCategory = categories[0].category_nm;
+  $: visible = enriched.filter(s => s.category_nm === activeCategory);
+
   // Миникарта региона — карточки рендерятся асинхронно (данные из БД),
   // поэтому карту инициализируем через use:-action на момент появления
   // самого элемента, а не через onMount + querySelectorAll.
@@ -285,9 +291,16 @@ hide_breadcrumbs: true
 </style>
 
 ```sql q_stories
-SELECT story_id, story_nm, geo_lat, geo_lon
+SELECT story_id, story_nm, geo_lat, geo_lon, category_nm
 FROM dwh_pg_1.b_stories
 WHERE language_code = 'ru'
+```
+
+```sql q_categories
+SELECT category_nm, label_nm, sort_order_idx
+FROM dwh_pg_1.b_story_categories
+WHERE language_code = 'ru'
+ORDER BY sort_order_idx
 ```
 
 ```sql q_latest_headlines
@@ -343,7 +356,18 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
 
 # Сюжеты
 
-{#each enriched as story, storyIdx}
+<div class="not-prose flex gap-2 mb-5">
+  {#each categories as cat}
+    <button
+      class="px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors"
+      style="background:{activeCategory === cat.category_nm ? '#C0401C' : '#f0ede8'}; color:{activeCategory === cat.category_nm ? '#F1EADB' : '#57534e'}"
+      on:click={() => activeCategory = cat.category_nm}>
+      {cat.label_nm}
+    </button>
+  {/each}
+</div>
+
+{#each visible as story, storyIdx}
 {@const total = story.images.length}
 {@const slide = activeSlide[story.story_id] || 0}
 <a href="/stories/{story.story_id}"

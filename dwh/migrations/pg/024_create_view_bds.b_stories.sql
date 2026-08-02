@@ -7,6 +7,6 @@ SELECT
     , story_nm
     , geo_lat
     , geo_lon
+    , category_nm
 FROM dds.s_story_details
-WHERE is_active = true
-;
+WHERE is_active = true;
