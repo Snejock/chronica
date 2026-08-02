@@ -28,12 +28,26 @@ case $1 in
         REBUILD_INTERVAL=${EVIDENCE_REBUILD_INTERVAL:-1200}
         npm install
 
-        # `build` is always a symlink to a timestamped release directory, never a real
-        # directory itself. Each rebuild compiles into a brand-new release dir (via
-        # EVIDENCE_BUILD_DIR), leaving the currently-served release untouched, then
-        # repoints `build` at it with a single atomic rename. `npm run preview` resolves
-        # the `build` symlink on every request, so the swap is instant and the site never
-        # 404s while a rebuild is in progress. If the build fails, `build` is left as-is.
+        # A failed build must never take down this script — it's PID 1 of the
+        # container, so `set -e` catching a stray non-zero exit here (e.g. from a
+        # crash inside evidence's own build tooling) kills the whole container and
+        # `restart: unless-stopped` throws it into a boot-loop with no server ever
+        # coming up. rebuild() already handles its own success/failure explicitly
+        # below, so global -e is pure downside for this branch.
+        set +e
+
+        # `live` is always a symlink to a timestamped release directory, never a real
+        # directory itself. `evidence build` always writes its finished output to the
+        # literal `./build` — EVIDENCE_BUILD_DIR does NOT reliably redirect it in
+        # @evidence-dev/evidence 40.1.8 (its post-build copy step in cli.js hardcodes
+        # `.evidence/template/build` as the source regardless of that env var), so we
+        # don't use it at all. Instead each rebuild: runs a plain `npm run build` (no
+        # override), moves the resulting `./build` out to a fresh timestamped dir, then
+        # atomically repoints `live` at it. We run `serve` ourselves (not via
+        # `npm run preview` / `evidence preview`, which hardcodes `npx serve build`) so
+        # it reads our `live` symlink instead — resolved fresh on every request, so the
+        # swap is instant and the site never 404s while a rebuild is in progress. If the
+        # build fails, `live` is left as-is.
         #
         # Old release dirs are kept around for GRACE_MIN minutes after being replaced,
         # not deleted the instant the symlink flips: a browser tab open across the swap
@@ -43,15 +57,18 @@ case $1 in
         GRACE_MIN=${EVIDENCE_RELEASE_GRACE_MIN:-10}
         rebuild() {
             local release="build_$(date +%Y%m%d%H%M%S%N)"
-            rm -rf "$release"
-            if npm run sources && EVIDENCE_BUILD_DIR="./$release" npm run build; then
-                ln -sfn "$release" build.tmp
-                mv -T build.tmp build
-                find . -maxdepth 1 -type d -name 'build_*' -mmin "+$GRACE_MIN" ! -name "$release" -exec rm -rf {} +
-                return 0
+            rm -rf "$release" build
+            if npm run sources && npm run build; then
+                if mv build "$release" && ln -sfn "$release" live.tmp && mv -T live.tmp live; then
+                    find . -maxdepth 1 -type d -name 'build_*' -mmin "+$GRACE_MIN" ! -name "$release" -exec rm -rf {} +
+                    return 0
+                else
+                    echo "[build] swap failed, keeping previous release"
+                    return 1
+                fi
             else
                 echo "[build] failed, keeping previous release"
-                rm -rf "$release"
+                rm -rf "$release" build
                 return 1
             fi
         }
@@ -64,7 +81,7 @@ case $1 in
             rebuild || echo "[refresh] failed, will retry next cycle"
           done
         ) &
-        COMMAND="npm run preview"
+        COMMAND="npx serve -l 3000 live"
         ;;
     *)
         if [ $# -gt 0 ];
