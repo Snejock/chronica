@@ -146,6 +146,18 @@
     { nm: 'companies',   label: 'Компании' },
   ];
 
+  // Примеры для бегущей строки на десктопной заглушке — статичный набор, не живой
+  // запрос: +layout.svelte не страница и не может выполнить sql-запрос к БД (см. выше).
+  const TICKER_ITEMS = [
+    'Конфликт в Персидском заливе — эскалация',
+    'Россия и Украина — переговорный трек',
+    'Роснефть (ROSN) — квартальная отчётность',
+    'Газпром (GAZP) — экспортные контракты',
+    'Сбербанк (SBER) — решение по дивидендам',
+    'Яндекс (YDEX) — новый продукт',
+  ];
+  const tickerLoop = [...TICKER_ITEMS, ...TICKER_ITEMS];
+
   function swipeBack(node, url) {
     let currentUrl = url;
     let active = false, startX = 0, startY = 0;
@@ -210,6 +222,14 @@
       Собираем материалы из открытых источников, группируем по темам и формируем
       ежедневные сводки — чтобы следить за событиями без лишнего шума.
     </p>
+    <div class="c-desktop-gate-ticker">
+      <div class="c-desktop-gate-ticker-track">
+        {#each tickerLoop as item}
+          <span class="c-desktop-gate-ticker-item">{item}</span>
+          <span class="c-desktop-gate-ticker-sep">·</span>
+        {/each}
+      </div>
+    </div>
     <a href="https://t.me/signalfire_aibot" target="_blank" rel="noopener" class="c-desktop-gate-cta">
       Открыть в Telegram →
     </a>
@@ -684,6 +704,35 @@
     line-height: 1.6;
     color: #44403c;
   }
+  .c-desktop-gate-ticker {
+    width: 100%;
+    max-width: 640px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  }
+  .c-desktop-gate-ticker-track {
+    display: flex;
+    align-items: center;
+    width: max-content;
+    gap: 14px;
+    animation: cg-marquee 34s linear infinite;
+  }
+  .c-desktop-gate-ticker-item {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: #78716c;
+    white-space: nowrap;
+  }
+  .c-desktop-gate-ticker-sep {
+    font-size: 12px;
+    color: #d6d3d1;
+  }
+  @keyframes cg-marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
   .c-desktop-gate-cta {
     display: inline-block;
     margin-top: 8px;
@@ -700,5 +749,33 @@
   .c-desktop-gate-cta:hover {
     background: #a33618;
     transform: translateY(-1px);
+  }
+
+  /* Появление блоков по очереди при открытии заглушки */
+  @keyframes cg-fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .c-desktop-gate-flag,
+  .c-desktop-gate-tagline,
+  .c-desktop-gate-ticker,
+  .c-desktop-gate-cta {
+    animation: cg-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .c-desktop-gate-flag    { animation-delay: 0s; }
+  .c-desktop-gate-tagline { animation-delay: 0.1s; }
+  .c-desktop-gate-ticker  { animation-delay: 0.2s; }
+  .c-desktop-gate-cta     { animation-delay: 0.3s; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .c-desktop-gate-ticker-track {
+      animation: none;
+    }
+    .c-desktop-gate-flag,
+    .c-desktop-gate-tagline,
+    .c-desktop-gate-ticker,
+    .c-desktop-gate-cta {
+      animation: none;
+    }
   }
 </style>
