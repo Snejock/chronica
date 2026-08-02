@@ -723,7 +723,7 @@
     align-items: center;
     width: max-content;
     gap: 14px;
-    animation: cg-marquee 34s linear infinite;
+    animation: cg-marquee 46s linear infinite;
   }
   .c-desktop-gate-ticker-item {
     font-family: 'IBM Plex Mono', monospace;
