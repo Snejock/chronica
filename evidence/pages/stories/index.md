@@ -4,6 +4,8 @@ hide_breadcrumbs: true
 ---
 
 <script>
+  import { page } from '$app/stores';
+
   function absUrl(url) {
     if (!url) return url;
     return /^https?:\/\//i.test(url) ? url : 'https://' + url;
@@ -196,7 +198,10 @@ hide_breadcrumbs: true
   });
 
   $: categories = q_categories.filter(c => enriched.some(s => s.category_nm === c.category_nm));
-  $: if (activeCategory === null && categories.length > 0) activeCategory = categories[0].category_nm;
+  $: if (activeCategory === null && categories.length > 0) {
+    const fromUrl = $page.url.searchParams.get('category');
+    activeCategory = categories.some(c => c.category_nm === fromUrl) ? fromUrl : categories[0].category_nm;
+  }
   $: visible = enriched.filter(s => s.category_nm === activeCategory);
 
   // Миникарта региона — карточки рендерятся асинхронно (данные из БД),

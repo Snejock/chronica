@@ -89,6 +89,13 @@
   let menuOpen = false;
   function closeMenu() { menuOpen = false; }
 
+  // Список дублирует сид dds.s_story_categories — в боковом меню он зашит статично,
+  // т.к. +layout.svelte не страница и не может выполнить sql-запрос к БД.
+  const SIDEBAR_CATEGORIES = [
+    { nm: 'geopolitics', label: 'Геополитика' },
+    { nm: 'companies',   label: 'Компании' },
+  ];
+
   function swipeBack(node, url) {
     let currentUrl = url;
     let active = false, startX = 0, startY = 0;
@@ -158,6 +165,29 @@
       </svg>
       Сюжеты
     </a>
+    {#each SIDEBAR_CATEGORIES as cat}
+      <a href="/stories?category={cat.nm}" class="c-sidebar-sub" on:click={closeMenu}>
+        {cat.label}
+      </a>
+    {/each}
+
+    <div class="c-sidebar-divider"></div>
+
+    <div class="c-sidebar-disabled" aria-disabled="true" tabindex="-1">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      Поддержка
+    </div>
+    <div class="c-sidebar-disabled" aria-disabled="true" tabindex="-1">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      Профиль
+    </div>
   </nav>
 </aside>
 
@@ -330,6 +360,30 @@
     background: #f0ede9;
   }
   .c-sidebar-nav svg {
+    flex-shrink: 0;
+  }
+  .c-sidebar-sub {
+    padding-left: 40px !important;
+    font-size: 14px !important;
+    color: #57534e !important;
+  }
+  .c-sidebar-divider {
+    height: 1px;
+    background: #f0ede9;
+    margin: 8px 4px;
+    flex-shrink: 0;
+  }
+  .c-sidebar-disabled {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 15px;
+    color: #a8a29e;
+    cursor: default;
+  }
+  .c-sidebar-disabled svg {
     flex-shrink: 0;
   }
 
