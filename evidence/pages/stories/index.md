@@ -355,7 +355,7 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
 
   <!-- Карусель: последние фотографии (первая, до верха карточки) -->
   {#if total > 0}
-  <div class="relative" style="height:180px; background:#f0ede8; overflow:hidden">
+  <div class="relative" style="height:180px; background:#f0ede8; overflow:hidden; isolation:isolate">
 
     <!-- Скролл-контейнер (scroll-snap + drag мышью) -->
     <div class="carousel-scroll flex h-full"

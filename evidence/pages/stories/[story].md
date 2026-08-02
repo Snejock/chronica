@@ -1005,7 +1005,7 @@ ORDER BY day
 ## Карта событий
 
 {#if q_story[0]}
-<div class="not-prose mt-2 mb-10 rounded-xl border overflow-hidden" style="background:#ffffff; height:200px; border-color:#e7e5e4">
+<div class="not-prose mt-2 mb-10 rounded-xl border overflow-hidden" style="background:#ffffff; height:200px; border-color:#e7e5e4; isolation:isolate">
   <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5 }} style="height:100%; width:100%"></div>
 </div>
 {/if}

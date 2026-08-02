@@ -253,7 +253,7 @@ ORDER BY published_dttm DESC
   <div class="not-prose fixed inset-0 z-40" on:click={() => openFilter = null} aria-hidden="true"></div>
 {/if}
 
-<div class="not-prose flex gap-2 mb-5" style="position:relative; z-index:41">
+<div class="not-prose flex gap-2 mb-5" style="position:relative; z-index:70">
 
   {#if countries.length >= 2}
   <div style="position:relative">
