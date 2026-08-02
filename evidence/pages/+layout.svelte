@@ -229,6 +229,9 @@
       Собираем материалы из открытых источников, группируем по темам и формируем
       ежедневные сводки — чтобы следить за событиями без лишнего шума.
     </p>
+    <a href="https://t.me/signalfire_aibot" target="_blank" rel="noopener" class="c-desktop-gate-cta">
+      Открыть в Telegram →
+    </a>
     <div class="c-desktop-gate-ticker">
       <div class="c-desktop-gate-ticker-track">
         {#each tickerLoop as item}
@@ -237,9 +240,6 @@
         {/each}
       </div>
     </div>
-    <a href="https://t.me/signalfire_aibot" target="_blank" rel="noopener" class="c-desktop-gate-cta">
-      Открыть в Telegram →
-    </a>
   </div>
 </div>
 
@@ -649,18 +649,18 @@
       z-index: var(--z-desktop-gate);
       align-items: center;
       justify-content: center;
-      padding: 40px;
+      padding: 64px;
       background:
         radial-gradient(ellipse at top, rgba(192, 64, 28, 0.08), transparent 60%),
         #faf9f7;
     }
   }
   .c-desktop-gate-inner {
-    max-width: 560px;
+    max-width: 680px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 20px;
+    gap: 36px;
     text-align: center;
   }
   .c-desktop-gate-flag {
@@ -714,6 +714,7 @@
   .c-desktop-gate-ticker {
     width: 100%;
     max-width: 640px;
+    margin-top: 16px;
     overflow: hidden;
     -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
     mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
@@ -771,8 +772,8 @@
   }
   .c-desktop-gate-flag    { animation-delay: 0s; }
   .c-desktop-gate-tagline { animation-delay: 0.1s; }
-  .c-desktop-gate-ticker  { animation-delay: 0.2s; }
-  .c-desktop-gate-cta     { animation-delay: 0.3s; }
+  .c-desktop-gate-cta     { animation-delay: 0.2s; }
+  .c-desktop-gate-ticker  { animation-delay: 0.3s; }
 
   @media (prefers-reduced-motion: reduce) {
     .c-desktop-gate-ticker-track {
