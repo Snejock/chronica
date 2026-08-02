@@ -250,10 +250,10 @@ ORDER BY published_dttm DESC
 {#if countries.length >= 2 || feeds.length >= 2}
 
 {#if openFilter}
-  <div class="not-prose fixed inset-0 z-40" on:click={() => openFilter = null} aria-hidden="true"></div>
+  <div class="not-prose fixed inset-0" style="z-index:var(--z-scrim)" on:click={() => openFilter = null} aria-hidden="true"></div>
 {/if}
 
-<div class="not-prose flex gap-2 mb-5" style="position:relative; z-index:70">
+<div class="not-prose flex gap-2 mb-5" style="position:relative; z-index:{openFilter ? 'var(--z-popover)' : 'var(--z-content-raised)'}">
 
   {#if countries.length >= 2}
   <div style="position:relative">
@@ -269,7 +269,7 @@ ORDER BY published_dttm DESC
     </button>
     {#if openFilter === 'country'}
       <div class="absolute left-0 rounded-xl border py-1"
-           style="top:calc(100% + 6px); background:#fff; border-color:#e7e5e4; box-shadow:0 4px 20px rgba(0,0,0,0.1); min-width:160px; max-height:260px; overflow-y:auto; z-index:50">
+           style="top:calc(100% + 6px); background:#fff; border-color:#e7e5e4; box-shadow:0 4px 20px rgba(0,0,0,0.1); min-width:160px; max-height:260px; overflow-y:auto; z-index:var(--z-popover)">
         <button type="button" on:click|stopPropagation={() => { activeCountry = null; openFilter = null; }}
           class="w-full text-left px-4 py-2.5 text-sm cursor-pointer transition-colors"
           style="background:none; border:none; color:{activeCountry === null ? '#15140F' : '#78716c'}; font-weight:{activeCountry === null ? '500' : '400'}">
@@ -301,7 +301,7 @@ ORDER BY published_dttm DESC
     </button>
     {#if openFilter === 'feed'}
       <div class="absolute left-0 rounded-xl border py-1"
-           style="top:calc(100% + 6px); background:#fff; border-color:#e7e5e4; box-shadow:0 4px 20px rgba(0,0,0,0.1); min-width:180px; max-height:260px; overflow-y:auto; z-index:50">
+           style="top:calc(100% + 6px); background:#fff; border-color:#e7e5e4; box-shadow:0 4px 20px rgba(0,0,0,0.1); min-width:180px; max-height:260px; overflow-y:auto; z-index:var(--z-popover)">
         <button type="button" on:click|stopPropagation={() => { activeFeed = null; openFilter = null; }}
           class="w-full text-left px-4 py-2.5 text-sm cursor-pointer transition-colors"
           style="background:none; border:none; color:{activeFeed === null ? '#15140F' : '#78716c'}; font-weight:{activeFeed === null ? '500' : '400'}">

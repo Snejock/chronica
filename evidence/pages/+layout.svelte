@@ -234,6 +234,20 @@
 </nav>
 
 <style>
+  /* Единая шкала z-index на весь сайт — используйте переменные вместо чисел на любой
+     странице (доступны глобально через :root). Виджеты со своими внутренними z-index
+     (карты, карусели, таймлайны) обязаны иметь isolation:isolate на обёртке — тогда их
+     локальные цифры замкнуты внутри и не могут конкурировать с этой шкалой в принципе. */
+  :global(:root) {
+    --z-content-raised: 10; /* элемент обычного контента, которому временно нужно быть
+                                выше окружения (напр. открытая обёртка поповера) */
+    --z-scrim: 40;          /* полноэкранный перехватчик кликов "вне попап-меню" */
+    --z-header: 50;         /* верхний хедер */
+    --z-island: 60;         /* нижний плавающий остров-навигация */
+    --z-popover: 70;        /* открытые дропдауны/поповеры — должны быть выше хедера и острова */
+    --z-backdrop: 98;       /* затемнение под боковым меню */
+    --z-sidebar: 99;        /* само боковое меню */
+  }
   :global(header) { display: none !important; }
   :global(html), :global(body) {
     background-color: #faf9f7;
@@ -252,7 +266,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0);
-    z-index: 98;
+    z-index: var(--z-backdrop);
     pointer-events: none;
     transition: background 0.3s ease;
   }
@@ -268,7 +282,7 @@
     width: max-content;
     min-width: 180px;
     background: #faf9f7;
-    z-index: 99;
+    z-index: var(--z-sidebar);
     transform: translateX(-100%);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 4px 0 32px rgba(0, 0, 0, 0.08);
@@ -331,7 +345,7 @@
     padding-top: env(safe-area-inset-top, 0px);
     background: #ffffff;
     border-bottom: 1px solid #f0ede9;
-    z-index: 50;
+    z-index: var(--z-header);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -404,7 +418,7 @@
     left: 50%;
     bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
-    z-index: 60;
+    z-index: var(--z-island);
     display: flex;
     align-items: stretch;
     width: calc(100% - 24px);
