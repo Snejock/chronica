@@ -140,7 +140,32 @@
   <meta name="theme-color" content="#faf9f7" />
   <!-- viewport-fit=cover: без этого env(safe-area-inset-top) всегда 0, и фикс ниже для Telegram WebView не сработает -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <!-- Для c-desktop-gate ниже — те же шрифты, что и на / -->
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 </svelte:head>
+
+<!-- Десктопная заглушка: сайт делается под мобильные устройства, на широких экранах
+     с мышью вместо мобильного UI показываем визитку с переходом в Telegram-бота.
+     Чистый CSS (media query по ширине + pointer:fine) — без редиректа и JS,
+     работает даже на пререндеренном статическом сайте. -->
+<div class="c-desktop-gate">
+  <div class="c-desktop-gate-inner">
+    <span class="c-desktop-gate-flag">
+      <span class="c-desktop-gate-word">CHRONICA</span>
+      <span class="c-desktop-gate-badge">.AI</span>
+    </span>
+    <p class="c-desktop-gate-tagline">
+      Собираем материалы из открытых источников, группируем по темам и формируем
+      ежедневные сводки — чтобы следить за событиями без лишнего шума.
+    </p>
+    <p class="c-desktop-gate-note">
+      Chronica делается для телефона — самый удобный способ читать сюжеты сейчас в Telegram.
+    </p>
+    <a href="https://t.me/signalfire_aibot" target="_blank" rel="noopener" class="c-desktop-gate-cta">
+      Открыть в Telegram →
+    </a>
+  </div>
+</div>
 
 <!-- Затемнение -->
 <div class="c-backdrop" class:c-backdrop-open={menuOpen} on:click={closeMenu} aria-hidden="true"></div>
@@ -277,6 +302,7 @@
     --z-popover: 70;        /* открытые дропдауны/поповеры — должны быть выше хедера и острова */
     --z-backdrop: 98;       /* затемнение под боковым меню */
     --z-sidebar: 99;        /* само боковое меню */
+    --z-desktop-gate: 999;  /* десктопная заглушка — выше вообще всего на сайте */
   }
   :global(header) { display: none !important; }
   :global(html), :global(body) {
@@ -532,5 +558,84 @@
   }
   :global(html[data-nav-dir="back"]::view-transition-new(root)) {
     animation: slide-in-left 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Десктопная заглушка — скрыта по умолчанию (мобильный UI — основной сценарий),
+     показывается только на широких экранах с мышью/трекпадом. */
+  .c-desktop-gate {
+    display: none;
+  }
+  @media (min-width: 900px) and (pointer: fine) {
+    .c-desktop-gate {
+      display: flex;
+      position: fixed;
+      inset: 0;
+      z-index: var(--z-desktop-gate);
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      background:
+        radial-gradient(ellipse at top, rgba(192, 64, 28, 0.08), transparent 60%),
+        #faf9f7;
+    }
+  }
+  .c-desktop-gate-inner {
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    text-align: center;
+  }
+  .c-desktop-gate-flag {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 14px;
+  }
+  .c-desktop-gate-word {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 800;
+    font-size: 56px;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    color: #16140F;
+  }
+  .c-desktop-gate-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: 0.1em;
+    line-height: 1;
+    color: #F1EADB;
+    background: #C0401C;
+    padding: 7px 10px;
+  }
+  .c-desktop-gate-tagline {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.6;
+    color: #44403c;
+  }
+  .c-desktop-gate-note {
+    margin: 0;
+    font-size: 13px;
+    color: #a8a29e;
+  }
+  .c-desktop-gate-cta {
+    display: inline-block;
+    margin-top: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 14px;
+    letter-spacing: 0.06em;
+    color: #F1EADB;
+    background: #C0401C;
+    padding: 14px 36px;
+    text-decoration: none;
+    transition: background 0.2s ease, transform 0.15s ease;
+  }
+  .c-desktop-gate-cta:hover {
+    background: #a33618;
+    transform: translateY(-1px);
   }
 </style>
