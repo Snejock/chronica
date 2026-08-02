@@ -34,18 +34,20 @@ case $1 in
         # repoints `build` at it with a single atomic rename. `npm run preview` resolves
         # the `build` symlink on every request, so the swap is instant and the site never
         # 404s while a rebuild is in progress. If the build fails, `build` is left as-is.
+        #
+        # Old release dirs are kept around for GRACE_MIN minutes after being replaced,
+        # not deleted the instant the symlink flips: a browser tab open across the swap
+        # still requests the previous release's content-hashed JS/data chunks by their
+        # old filename, and removing that directory immediately 404s those in-flight
+        # requests from tabs that were open at deploy time.
+        GRACE_MIN=${EVIDENCE_RELEASE_GRACE_MIN:-10}
         rebuild() {
             local release="build_$(date +%Y%m%d%H%M%S%N)"
             rm -rf "$release"
             if npm run sources && EVIDENCE_BUILD_DIR="./$release" npm run build; then
                 ln -sfn "$release" build.tmp
                 mv -T build.tmp build
-                for d in build_*/; do
-                    d=${d%/}
-                    [ -d "$d" ] || continue
-                    [ "$d" = "$release" ] && continue
-                    rm -rf "$d"
-                done
+                find . -maxdepth 1 -type d -name 'build_*' -mmin "+$GRACE_MIN" ! -name "$release" -exec rm -rf {} +
                 return 0
             else
                 echo "[build] failed, keeping previous release"
