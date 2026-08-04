@@ -9,6 +9,7 @@ include:
   - dwh/compose/redis/docker-compose.yaml
   - dwh/compose/redpanda/docker-compose.yaml
   - dwh/compose/ollama/docker-compose.yaml
+  - dwh/compose/minio/docker-compose.yaml
   - evidence/compose/docker-compose.yaml
 
 networks:
