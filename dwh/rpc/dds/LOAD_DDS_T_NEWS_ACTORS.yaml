@@ -1,0 +1,546 @@
+input:
+  redpanda:
+    seed_brokers: ["dwh-rp-1:9092"]
+    topics: ["news_translated"]
+    consumer_group: "LOAD_DDS_T_NEWS_ACTORS"
+
+pipeline:
+  threads: 1
+  processors:
+    - label: decode
+      schema_registry_decode:
+        url: "http://dwh-rp-1:8081"
+    - catch:
+        - log:
+            level: ERROR
+            message: "❌ AVRO DECODE FAILED: ${! error() }"
+        - mapping: 'root = deleted()'
+
+    # работает только с англоязычной версией новости — единый рабочий язык для LLM-шагов
+    - mapping: |
+        root = if this.language_code != "en" { deleted() } else { this }
+
+    - branch:
+        processors:
+          - try:
+              - label: redis_check
+                cache:
+                  resource: redis_cache
+                  operator: exists
+                  key: "processed:dds.t_news_actors:${! this.news_link.string() }"
+        result_map: 'meta is_processed = content().string().catch("false")'
+
+    - mapping: |
+        root = if meta("is_processed") == "true" { deleted() } else { this }
+
+    # извлечение акторов персон
+    - branch:
+        request_map: |
+          let system_instruction = """
+            You are an expert news analyst. Extract all named human individuals (real physical persons only —
+            never organizations, companies, government bodies, or countries) who speak or act in the provided
+            news article.
+
+            Return a JSON object with a single field "actors": an array of objects, each with:
+            - actor_nm (string) — the person's name exactly as it appears in the article
+            - search_nm (string) — the person's full, commonly-known name, suitable for looking them up in
+              Wikidata (e.g. if the article only says "Obama", use "Barack Obama"; if it only says "the
+              foreign minister", but you can infer from context who that is, use their full name). If you
+              cannot confidently expand the name, repeat actor_nm as-is.
+            - context_txt (string, in English) — a short phrase describing this person's role/position as
+              stated or implied in the article, used later to disambiguate them from others with the same name
+              (e.g. "Russian president", "Iranian foreign minister", "local resident quoted in the story")
+            - confidence_prt (float, 0.00-1.00) — how confident you are this is a real, distinctly named individual
+
+            Rules:
+            - Only include real, named individuals — no anonymous references ("a spokesperson", "residents"),
+              no organizations, no countries.
+            - Do not invent people who are not mentioned in the text.
+            - If no such individuals are mentioned, return {"actors": []}.
+
+            Return JSON only, no explanations.
+          """
+
+          let prompt_text = """
+            News:
+            Title: """ + this.title_txt.or("") + """
+            Summary: """ + this.summary_txt.or("") + """
+
+            Your response (JSON only):
+          """
+
+          root = {
+            "model": "deepseek-v4-flash",
+            "stream": false,
+            "temperature": 0.0,
+            "top_p": 0.1,
+            "response_format": { "type": "json_object" },
+            "messages": [
+              { "role": "system", "content": $system_instruction },
+              { "role": "user",   "content": $prompt_text }
+            ]
+          }
+        processors:
+          - label: http_extract_actors
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
+          - mapping: |
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
+              root.actors = if $result != null { $result.actors } else { null }
+        result_map: |
+          root.actors = this.actors
+
+    # отметка новости успешно обработанной, только если LLM-вызов реально отработал
+    - branch:
+        request_map: |
+          root = if this.actors != null { this } else { deleted() }
+        processors:
+          - cache:
+              resource: redis_cache
+              operator: set
+              key: "processed:dds.t_news_actors:${! this.news_link.string() }"
+              value: "true"
+
+    - mapping: |
+        root = if this.actors == null || this.actors.type() != "array" || this.actors.length() == 0 { deleted() } else { this }
+
+    # разворачивание одной новости в N сообщений (по числу извлечённых акторов)
+    - mapping: |
+        let news_link = this.news_link.string()
+        root = this.actors.map_each(a -> {
+          "news_link": $news_link,
+          "raw_actor_nm": a.actor_nm.string().catch(""),
+          "search_nm": a.search_nm.string().catch(a.actor_nm.string().catch("")),
+          "context_txt": a.context_txt.string().catch(""),
+          "confidence_prt": a.confidence_prt.number().catch(null)
+        })
+
+    - mapping: |
+        root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
+
+    - unarchive:
+        format: json_array
+
+    - mapping: |
+        root = if this.raw_actor_nm == "" { deleted() } else { this }
+
+    - mapping: |
+        root = this
+        root.alias_key = this.raw_actor_nm.trim().lowercase()
+
+    # резолв актора
+
+    # проверка наличия алиаса в кэше (redis)
+    - branch:
+        processors:
+          - try:
+              - label: redis_check_alias
+                cache:
+                  resource: redis_cache
+                  operator: get
+                  key: "lookup:dds.s_actor_aliases:${! this.alias_key }"
+        result_map: 'root.actor_id = content().string().catch(null)'
+
+    # сброс флага ошибки от штатного cache-miss, чтобы не доехал до конца пайплайна
+    - catch: []
+
+    # проверка наличия алиаса в БД
+    # в случае успеха запись добавляется в кэш (redis)
+    - branch:
+        request_map: |
+          root = if this.actor_id == null { this } else { deleted() }
+        processors:
+          - label: postgres_check_alias
+            sql_raw:
+              driver: postgres
+              dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+              query: "SELECT alias_nm, actor_id FROM dds.s_actor_aliases WHERE alias_nm = $1"
+              args_mapping: "root = [this.alias_key]"
+          - branch:
+              request_map: |
+                root = if this.length() > 0 { this } else { deleted() }
+              processors:
+                - cache:
+                    resource: redis_cache
+                    operator: set
+                    key: 'lookup:dds.s_actor_aliases:${! this.index(0).alias_nm.string() }'
+                    value: '${! this.index(0).actor_id.string() }'
+        result_map: 'root.actor_id = this.index(0).actor_id.catch(null)'
+
+    # поиск кандидатов в Wikidata (только если не нашли по алиасам)
+    - branch:
+        request_map: |
+          root = if this.actor_id != null { deleted() } else { this }
+        processors:
+          - label: http_wikidata_search
+            http:
+              url: 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&limit=5&search=${! this.search_nm.escape_url_query() }'
+              verb: GET
+              headers:
+                User-Agent: "Chronica/1.0 (contact: s7.chernov@gmail.com)"
+              timeout: 30s
+              retries: 2
+              retry_period: "3s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ Wikidata search failed: ${! error() }"
+              - mapping: 'root = {"search": []}'
+        result_map: |
+          root.candidates = this.search.catch([]).slice(0, 5).map_each(c -> {
+            "qid": c.id.string().catch(""),
+            "label": c.label.string().catch(""),
+            "description": c.description.string().catch("")
+          })
+
+    # выбор правильного кандидата
+    - branch:
+        request_map: |
+          root = if this.actor_id != null || this.candidates.catch([]).length() == 0 {
+            deleted()
+          } else {
+            let system_instruction = """
+              You are an expert entity-disambiguation assistant. Given a name mentioned in a news article,
+              a short context describing who this person is in the article, and a list of Wikidata candidates,
+              decide which candidate (if any) is the correct real person.
+
+              Return a JSON object: {"qid": "<Q-id>"} if you are confident about a match,
+              or {"qid": null} if none of the candidates is a confident match, or if the correct entity
+              is not clearly a real physical person.
+
+              Only pick a candidate if you are reasonably confident it is the same person described
+              by the context. Do not guess.
+            """
+
+            let prompt_text = """
+              Name as mentioned in the article: """ + this.raw_actor_nm.string() + """
+              Context from the article: """ + this.context_txt.string().or("") + """
+
+              Candidates:
+              """ + this.candidates.string() + """
+
+              Your answer (JSON only):
+            """
+
+            {
+              "model": "deepseek-v4-flash",
+              "stream": false,
+              "temperature": 0.0,
+              "top_p": 0.1,
+              "response_format": { "type": "json_object" },
+              "messages": [
+                { "role": "system", "content": $system_instruction },
+                { "role": "user",   "content": $prompt_text }
+              ]
+            }
+          }
+        processors:
+          - label: http_disambiguate
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 1m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ Disambiguation LLM failed: ${! error() }"
+          - mapping: |
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
+              root.chosen_qid = if $result != null { $result.qid } else { null }
+        result_map: 'root.chosen_qid = this.chosen_qid.catch(null)'
+
+    # получение карточки сущности из Wikidata по выбранному QID
+    - branch:
+        request_map: |
+          root = if this.actor_id != null || this.chosen_qid.catch(null) == null {
+            deleted()
+          } else { this }
+        processors:
+          - label: http_wikidata_entity
+            http:
+              url: 'https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&languages=en|ru&props=labels|descriptions|sitelinks|claims&ids=${! this.chosen_qid }'
+              verb: GET
+              headers:
+                User-Agent: "Chronica/1.0 (contact: s7.chernov@gmail.com)"
+              timeout: 30s
+              retries: 2
+              retry_period: "3s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ Wikidata entity fetch failed: ${! error() }"
+              - mapping: 'root = {"entities": {}}'
+          - mapping: |
+              let ent = this.entities.values().index(0).catch(null)
+              root.is_human = $ent != null && $ent.claims.P31.catch([]).map_each(c -> c.mainsnak.datavalue.value.id.string().catch("")).contains("Q5")
+              root.labels_en = $ent.labels.en.value.string().catch(null)
+              root.labels_ru = $ent.labels.ru.value.string().catch(null)
+              root.desc_en = $ent.descriptions.en.value.string().catch(null)
+              root.desc_ru = $ent.descriptions.ru.value.string().catch(null)
+              root.site_en = $ent.sitelinks.enwiki.title.string().catch(null)
+              root.site_ru = $ent.sitelinks.ruwiki.title.string().catch(null)
+              root.commons_file = $ent.claims.P18.index(0).mainsnak.datavalue.value.string().catch(null)
+        result_map: |
+          root.is_human = this.is_human.catch(false)
+          root.labels_en = this.labels_en.catch(null)
+          root.labels_ru = this.labels_ru.catch(null)
+          root.desc_en = this.desc_en.catch(null)
+          root.desc_ru = this.desc_ru.catch(null)
+          root.site_en = this.site_en.catch(null)
+          root.site_ru = this.site_ru.catch(null)
+          root.commons_file = this.commons_file.catch(null)
+
+    # финализация: если сущность — реальный человек, фиксируем actor_id и собираем детали по ru/en
+    - mapping: |
+        root = this
+        if this.actor_id == null && this.chosen_qid.catch(null) != null && this.is_human.catch(false) {
+          root.actor_id = this.chosen_qid
+          root.actor_type = "person"
+
+          let en_row = if this.labels_en.catch(null) != null || this.desc_en.catch(null) != null {
+            {
+              "language_code": "en",
+              "canonical_nm": this.labels_en.catch(null),
+              "description_txt": this.desc_en.catch(null),
+              "source_link": if this.site_en.catch(null) != null { "en.wikipedia.org/wiki/" + this.site_en.escape_url_query() } else { null }
+            }
+          } else { null }
+
+          let ru_row = if this.labels_ru.catch(null) != null || this.desc_ru.catch(null) != null {
+            {
+              "language_code": "ru",
+              "canonical_nm": this.labels_ru.catch(null),
+              "description_txt": this.desc_ru.catch(null),
+              "source_link": if this.site_ru.catch(null) != null { "ru.wikipedia.org/wiki/" + this.site_ru.escape_url_query() } else { null }
+            }
+          } else { null }
+
+          root.details = [en_row, ru_row].filter(d -> d != null)
+        }
+
+    # не удалось определить ни через кэш алиасов, ни через Wikidata — упоминание отбрасываем
+    - mapping: |
+        root = if this.actor_id == null { deleted() } else { this }
+
+    # метаданные фото (автор/лицензия) — только если это свежерезолвленный актор
+    - branch:
+        request_map: |
+          root = if this.commons_file.catch(null) == null { deleted() } else { this }
+        processors:
+          - label: http_commons_imageinfo
+            http:
+              url: 'https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=extmetadata&titles=File:${! this.commons_file.escape_url_query() }'
+              verb: GET
+              headers:
+                User-Agent: "Chronica/1.0 (contact: s7.chernov@gmail.com)"
+              timeout: 30s
+              retries: 2
+              retry_period: "3s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ Commons imageinfo fetch failed: ${! error() }"
+              - mapping: 'root = {}'
+          - mapping: |
+              let page = this.query.pages.values().index(0).catch(null)
+              let info = page.imageinfo.index(0).catch(null)
+              root.author_nm = info.extmetadata.Artist.value.string().catch(null)
+              root.license_nm = info.extmetadata.LicenseShortName.value.string().catch(null)
+        result_map: |
+          root.author_nm = this.author_nm.catch(null)
+          root.license_nm = this.license_nm.catch(null)
+          root.source_link_photo = "https://commons.wikimedia.org/wiki/File:" + root.commons_file.escape_url_query()
+          root.photo_ext = root.commons_file.split(".").index(-1).lowercase().catch("jpg")
+
+output:
+  label: load_dds_t_news_actors
+  broker:
+    pattern: fan_out
+    outputs:
+      # главная связка новость-актор — пишется в любом случае (кэш-хит или свежая резолюция)
+      - label: out_t_news_actors
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.t_news_actors (news_id, actor_id, model_nm, published_dttm, actor_nm, confidence_prt)
+            SELECT xxh64($1), $2, $3, h.published_dttm, $4, $5
+            FROM dds.h_news h
+            WHERE h.news_id = xxh64($1)
+            ON CONFLICT (news_id, actor_id, model_nm) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.news_link,
+              this.actor_id,
+              "deepseek-v4-flash:cloud",
+              this.raw_actor_nm,
+              this.confidence_prt.catch(null)
+            ]
+          batching:
+            count: 10
+            period: 1s
+
+      # создание записи в хабе один раз при первом упоминании актора
+      - label: out_h_actors
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.h_actors (actor_id, actor_type, _source_system)
+            VALUES ($1, $2, 'WD')
+            ON CONFLICT (actor_id) DO NOTHING;
+          args_mapping: 'root = [this.actor_id, this.actor_type]'
+          batching:
+            count: 10
+            period: 1s
+
+      # фиксирование написание имени, которое привело к этому actor_id
+      - label: out_s_actor_aliases
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_actor_aliases (alias_nm, actor_id)
+            VALUES ($1, $2)
+            ON CONFLICT (alias_nm) DO NOTHING;
+          args_mapping: 'root = [this.alias_key, this.actor_id]'
+          batching:
+            count: 10
+            period: 1s
+
+      - label: out_redis_alias
+        cache:
+          target: redis_cache
+          key: "lookup:dds.s_actor_aliases:${! this.alias_key }"
+          value: "${! this.actor_id.string() }"
+
+      # детали по языкам — только когда актор резолвился свежо через Wikidata в этом сообщении
+      - label: out_s_actor_details
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_actor_details (actor_id, language_code, canonical_nm, description_txt, source_link)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (actor_id, language_code) DO UPDATE SET
+              _loaded_dttm = now(),
+              canonical_nm = EXCLUDED.canonical_nm,
+              description_txt = EXCLUDED.description_txt,
+              source_link = EXCLUDED.source_link;
+          args_mapping: |
+            root = [
+              this.actor_id,
+              this.language_code,
+              this.canonical_nm,
+              this.description_txt,
+              this.source_link
+            ]
+          batching:
+            count: 10
+            period: 1s
+        processors:
+          - mapping: |
+              root = if this.details.catch([]).length() == 0 { deleted() } else { this }
+          - mapping: |
+              let actor_id = this.actor_id
+              root = this.details.map_each(d -> {
+                "actor_id": $actor_id,
+                "language_code": d.language_code,
+                "canonical_nm": d.canonical_nm,
+                "description_txt": d.description_txt,
+                "source_link": d.source_link
+              })
+          - unarchive:
+              format: json_array
+
+      # метаданные фото в Postgres — путь в MinIO строится детерминированно по actor_id,
+      # не дожидаясь ответа от aws_s3-заливки ниже
+      - label: out_s_actor_media
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_actor_media (actor_id, source_link, photo_url, author_nm, license_nm)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (actor_id) DO UPDATE SET
+              _loaded_dttm = now(),
+              source_link = EXCLUDED.source_link,
+              photo_url = EXCLUDED.photo_url,
+              author_nm = EXCLUDED.author_nm,
+              license_nm = EXCLUDED.license_nm;
+          args_mapping: |
+            root = [
+              this.actor_id,
+              this.source_link_photo,
+              this.photo_url,
+              this.author_nm,
+              this.license_nm
+            ]
+          batching:
+            count: 10
+            period: 1s
+        processors:
+          - mapping: |
+              root = if this.commons_file.catch(null) == null { deleted() } else { this }
+          - mapping: |
+              root.photo_url = "${MINIO_PUBLIC_BASE_URL}/${MINIO_BUCKET_ACTOR_MEDIA}/" + this.actor_id.string() + "." + this.photo_ext.string().catch("jpg")
+
+      # заливка фото в S3-совместимый output, endpoint переопределён под MINIO
+      - label: out_minio_photo
+        aws_s3:
+          bucket: "${MINIO_BUCKET_ACTOR_MEDIA}"
+          path: '${! meta("actor_id") }.${! meta("photo_ext") }'
+          endpoint: "${MINIO_ENDPOINT}"
+          region: "local"
+          force_path_style_urls: true
+          credentials:
+            id: "${MINIO_USER}"
+            secret: "${MINIO_PASSWORD}"
+          content_type: '${! meta("content_type") }'
+        processors:
+          - mapping: |
+              root = if this.commons_file.catch(null) == null { deleted() } else { this }
+          - mapping: |
+              let ext_to_mime = {
+                "png": "image/png",
+                "gif": "image/gif",
+                "webp": "image/webp",
+                "svg": "image/svg+xml",
+                "tif": "image/tiff",
+                "tiff": "image/tiff"
+              }
+              let ext = this.photo_ext.string().catch("jpg")
+              meta actor_id = this.actor_id.string()
+              meta photo_ext = ext
+              meta content_type = ext_to_mime.get(ext).catch("image/jpeg")
+              meta original_url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + this.commons_file.escape_url_query()
+          - label: http_fetch_photo_bytes
+            http:
+              url: '${! meta("original_url") }'
+              verb: GET
+              headers:
+                User-Agent: "Chronica/1.0 (contact: s7.chernov@gmail.com)"
+              timeout: 30s
+              retries: 2
+              retry_period: "3s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ Failed to download photo from Commons: ${! error() }"
+              - mapping: 'root = deleted()'
