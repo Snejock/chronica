@@ -28,7 +28,7 @@ a permission prompt.
 | `dwh-rp-console` | Redpanda Console UI |
 | `dwh-ol-1` | Ollama (local embeddings) |
 | `dwh-dbt` | dbt |
-| `dwh-minio` | MinIO |
+| `dwh-mn-1` | MinIO |
 | `chr-rss-fetcher` | rss-fetcher service |
 | `chr-moex-fetcher` | moex_fetcher service |
 | `chr-evidence-dev` | Evidence.dev dashboard, dev instance (`:33001`, hot reload) |

@@ -21,7 +21,7 @@ Config files referenced from README's "Конфигурация" section:
 
 ## What to check
 
-1. **Service list** — every service block across the compose files above vs the "Сервисы" / "Хранилище данных" / "Дашборд" tables in `README.md`. Chronica has drifted before by adding a compose service (e.g. `dwh-dbt`, `dwh-minio`) without adding it to README — check specifically for compose services with no matching README row.
+1. **Service list** — every service block across the compose files above vs the "Сервисы" / "Хранилище данных" / "Дашборд" tables in `README.md`. Chronica has drifted before by adding a compose service (e.g. `dwh-dbt`, `dwh-mn-1`) without adding it to README — check specifically for compose services with no matching README row.
 2. **Port mappings** — exposed host ports (`ports:` in each compose file) vs the URLs/ports called out in README (e.g. ClickHouse HTTP `38123`, Redpanda Console `38088`, RedisInsight `35540`, Evidence dev/prod `33001`/`33000`).
 3. **Container/service names** — `container_name` values vs any names mentioned in prose.
 4. **Config paths** — the file paths listed under "Конфигурация" still exist at those paths.
