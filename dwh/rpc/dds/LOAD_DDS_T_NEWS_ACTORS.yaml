@@ -207,32 +207,32 @@ pipeline:
     # выбор правильного кандидата
     - branch:
         request_map: |
+          let system_instruction = """
+            You are an expert entity-disambiguation assistant. Given a name mentioned in a news article,
+            a short context describing who this person is in the article, and a list of Wikidata candidates,
+            decide which candidate (if any) is the correct real person.
+
+            Return a JSON object: {"qid": "<Q-id>"} if you are confident about a match,
+            or {"qid": null} if none of the candidates is a confident match, or if the correct entity
+            is not clearly a real physical person.
+
+            Only pick a candidate if you are reasonably confident it is the same person described
+            by the context. Do not guess.
+          """
+
+          let prompt_text = """
+            Name as mentioned in the article: """ + this.raw_actor_nm.string().catch("") + """
+            Context from the article: """ + this.context_txt.string().catch("") + """
+
+            Candidates:
+            """ + this.candidates.catch([]).string() + """
+
+            Your answer (JSON only):
+          """
+
           root = if this.actor_id != null || this.candidates.catch([]).length() == 0 {
             deleted()
           } else {
-            let system_instruction = """
-              You are an expert entity-disambiguation assistant. Given a name mentioned in a news article,
-              a short context describing who this person is in the article, and a list of Wikidata candidates,
-              decide which candidate (if any) is the correct real person.
-
-              Return a JSON object: {"qid": "<Q-id>"} if you are confident about a match,
-              or {"qid": null} if none of the candidates is a confident match, or if the correct entity
-              is not clearly a real physical person.
-
-              Only pick a candidate if you are reasonably confident it is the same person described
-              by the context. Do not guess.
-            """
-
-            let prompt_text = """
-              Name as mentioned in the article: """ + this.raw_actor_nm.string() + """
-              Context from the article: """ + this.context_txt.string().or("") + """
-
-              Candidates:
-              """ + this.candidates.string() + """
-
-              Your answer (JSON only):
-            """
-
             {
               "model": "deepseek-v4-flash",
               "stream": false,
@@ -427,8 +427,11 @@ output:
       - label: out_redis_alias
         cache:
           target: redis_cache
-          key: "lookup:dds.s_actor_aliases:${! this.alias_key }"
-          value: "${! this.actor_id.string() }"
+          key: '${! meta("alias_cache_key") }'
+        processors:
+          - mapping: |
+              meta alias_cache_key = "lookup:dds.s_actor_aliases:" + this.alias_key
+              root = this.actor_id.string()
 
       # детали по языкам — только когда актор резолвился свежо через Wikidata в этом сообщении
       - label: out_s_actor_details
