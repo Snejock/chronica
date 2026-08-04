@@ -365,7 +365,7 @@ pipeline:
         result_map: |
           root.author_nm = this.author_nm.catch(null)
           root.license_nm = this.license_nm.catch(null)
-          root.source_link_photo = "https://commons.wikimedia.org/wiki/File:" + root.commons_file.escape_url_query()
+          root.source_link_photo = "commons.wikimedia.org/wiki/File:" + root.commons_file.escape_url_query()
           root.photo_ext = root.commons_file.split(".").index(-1).lowercase().catch("jpg")
 
 output:
