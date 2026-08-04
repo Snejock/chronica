@@ -1,5 +1,5 @@
 services:
-  minio:
+  dwh-mn-1:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: dwh-mn-1
     networks:
