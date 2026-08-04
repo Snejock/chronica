@@ -154,7 +154,7 @@ pipeline:
     # для них одного эмбеддинга недостаточно, нужна проверка LLM на прямое отношение
     - mapping: |
         root = this
-        root.anchored_candidates = this.candidates.filter(c -> c.anchor_txt != null)
+        root.anchored_candidates = this.candidates.catch([]).filter(c -> c.anchor_txt != null)
 
     # для кандидатов с anchor_txt спрашиваем LLM, действительно ли новость НАПРЯМУЮ про этот
     # предмет, а не просто упоминает его в общем контексте (санкционный пакет, отраслевая
@@ -225,7 +225,7 @@ pipeline:
     - mapping: |
         root = this
         let confirmed_anchor_ids = this.assessments.or([]).filter(a -> a.is_relevant == true).map_each(a -> a.story_id)
-        root.confirmed_candidates = this.candidates.filter(c -> c.anchor_txt == null || $confirmed_anchor_ids.contains(c.story_id))
+        root.confirmed_candidates = this.candidates.catch([]).filter(c -> c.anchor_txt == null || $confirmed_anchor_ids.contains(c.story_id))
 
     - mapping: |
         let vec_size = this.embedding.length().string() + " dims"
@@ -315,7 +315,7 @@ output:
           args_mapping: |
             root = [
               this.news_link.string().or(""),
-              this.confirmed_candidates.map_each(c -> {
+              this.confirmed_candidates.catch([]).map_each(c -> {
                 "story_id": c.story_id,
                 "distance_prt": c.distance_prt
               }).string(),
