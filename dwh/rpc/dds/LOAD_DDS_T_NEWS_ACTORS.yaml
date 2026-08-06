@@ -369,7 +369,9 @@ pipeline:
               # а не plain text, поэтому теги снимаем и декодируем HTML-сущности
               let raw_author = $info.extmetadata.Artist.value.catch(null)
               let clean_author = if $raw_author != null {
-                $raw_author.re_replace_all("<[^>]*>", " ").unescape_html().re_replace_all("\\s+", " ").trim()
+                # \s в Go-регэкспе — ASCII-класс, NBSP (U+00A0, частый гость в шаблонах атрибуции
+                # на Commons, например перед двоеточием) им не ловится — добавляем явно
+                $raw_author.re_replace_all("<[^>]*>", " ").unescape_html().re_replace_all("[\\s\\x{00A0}]+", " ").trim()
               } else { null }
               root.author_nm = if $clean_author == null || $clean_author == "" { null } else { $clean_author }
               root.license_nm = $info.extmetadata.LicenseShortName.value.catch(null)
@@ -495,19 +497,19 @@ output:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dds.s_actor_media (actor_id, source_link, photo_url, author_nm, license_nm)
+            INSERT INTO dds.s_actor_media (actor_id, source_link, photo_link, author_nm, license_nm)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (actor_id) DO UPDATE SET
               _loaded_dttm = now(),
               source_link = EXCLUDED.source_link,
-              photo_url = EXCLUDED.photo_url,
+              photo_link = EXCLUDED.photo_link,
               author_nm = EXCLUDED.author_nm,
               license_nm = EXCLUDED.license_nm;
           args_mapping: |
             root = [
               this.actor_id,
               this.source_link_photo,
-              this.photo_url,
+              this.photo_link,
               this.author_nm,
               this.license_nm
             ]
@@ -519,7 +521,9 @@ output:
               root = if this.commons_file.catch(null) == null { deleted() } else { this }
           - mapping: |
               root = this
-              root.photo_url = "${MINIO_PUBLIC_BASE_URL}/${MINIO_BUCKET_ACTOR_MEDIA}/" + this.actor_id.string() + "." + this.photo_ext.or("jpg")
+              # путь до объекта в бакете, без хоста — базовый URL (разный в dev/prod) достраивает
+              # читающая сторона (Evidence) на своей конфигурации, а не пайплайн
+              root.photo_link = "/${MINIO_BUCKET_ACTOR_MEDIA}/" + this.actor_id.string() + "." + this.photo_ext.or("jpg")
 
       # заливка фото в S3-совместимый output, endpoint переопределён под MINIO
       - label: out_minio_photo
