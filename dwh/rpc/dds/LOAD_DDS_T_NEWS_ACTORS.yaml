@@ -359,9 +359,9 @@ pipeline:
               - mapping: 'root = {}'
           - mapping: |
               let page = this.query.pages.values().index(0).catch(null)
-              let info = page.imageinfo.index(0).catch(null)
-              root.author_nm = info.extmetadata.Artist.value.catch(null)
-              root.license_nm = info.extmetadata.LicenseShortName.value.catch(null)
+              let info = $page.imageinfo.index(0).catch(null)
+              root.author_nm = $info.extmetadata.Artist.value.catch(null)
+              root.license_nm = $info.extmetadata.LicenseShortName.value.catch(null)
         result_map: |
           root.author_nm = this.author_nm.catch(null)
           root.license_nm = this.license_nm.catch(null)
