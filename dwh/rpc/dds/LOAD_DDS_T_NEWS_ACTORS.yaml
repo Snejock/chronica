@@ -295,7 +295,7 @@ pipeline:
               root.desc_ru = $ent.descriptions.ru.value.catch(null)
               root.site_en = $ent.sitelinks.enwiki.title.catch(null)
               root.site_ru = $ent.sitelinks.ruwiki.title.catch(null)
-              root.commons_file = $ent.claims.P18.index(0).mainsnak.datavalue.value.string().catch(null)
+              root.commons_file = $ent.claims.P18.index(0).mainsnak.datavalue.value.catch(null)
         result_map: |
           root.is_human = this.is_human.catch(false)
           root.labels_en = this.labels_en.catch(null)
@@ -371,8 +371,24 @@ pipeline:
 output:
   label: load_dds_t_news_actors
   broker:
-    pattern: fan_out
+    pattern: fan_out_sequential
     outputs:
+      # создание записи в хабе один раз при первом упоминании актора — должно случиться
+      # раньше остальных веток (у них FK на actor_id), поэтому стоит первой, а паттерн
+      # broker'а выше — fan_out_sequential, а не fan_out
+      - label: out_h_actors
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.h_actors (actor_id, actor_type, _source_system)
+            VALUES ($1, $2, 'WD')
+            ON CONFLICT (actor_id) DO NOTHING;
+          args_mapping: 'root = [this.actor_id, this.actor_type.or("person")]'
+          batching:
+            count: 10
+            period: 1s
+
       # главная связка новость-актор — пишется в любом случае (кэш-хит или свежая резолюция)
       - label: out_t_news_actors
         sql_raw:
@@ -392,20 +408,6 @@ output:
               this.raw_actor_nm,
               this.confidence_prt.catch(null)
             ]
-          batching:
-            count: 10
-            period: 1s
-
-      # создание записи в хабе один раз при первом упоминании актора
-      - label: out_h_actors
-        sql_raw:
-          driver: postgres
-          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-          query: |
-            INSERT INTO dds.h_actors (actor_id, actor_type, _source_system)
-            VALUES ($1, $2, 'WD')
-            ON CONFLICT (actor_id) DO NOTHING;
-          args_mapping: 'root = [this.actor_id, this.actor_type.or("person")]'
           batching:
             count: 10
             period: 1s
