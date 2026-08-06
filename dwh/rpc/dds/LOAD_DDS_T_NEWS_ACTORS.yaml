@@ -502,6 +502,7 @@ output:
           - mapping: |
               root = if this.commons_file.catch(null) == null { deleted() } else { this }
           - mapping: |
+              root = this
               root.photo_url = "${MINIO_PUBLIC_BASE_URL}/${MINIO_BUCKET_ACTOR_MEDIA}/" + this.actor_id.string() + "." + this.photo_ext.or("jpg")
 
       # заливка фото в S3-совместимый output, endpoint переопределён под MINIO
