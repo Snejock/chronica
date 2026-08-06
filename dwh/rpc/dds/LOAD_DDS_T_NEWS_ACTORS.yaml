@@ -289,12 +289,12 @@ pipeline:
           - mapping: |
               let ent = this.entities.values().index(0).catch(null)
               root.is_human = $ent != null && $ent.claims.P31.catch([]).map_each(c -> c.mainsnak.datavalue.value.id.string().catch("")).contains("Q5")
-              root.labels_en = $ent.labels.en.value.string().catch(null)
-              root.labels_ru = $ent.labels.ru.value.string().catch(null)
-              root.desc_en = $ent.descriptions.en.value.string().catch(null)
-              root.desc_ru = $ent.descriptions.ru.value.string().catch(null)
-              root.site_en = $ent.sitelinks.enwiki.title.string().catch(null)
-              root.site_ru = $ent.sitelinks.ruwiki.title.string().catch(null)
+              root.labels_en = $ent.labels.en.value.catch(null)
+              root.labels_ru = $ent.labels.ru.value.catch(null)
+              root.desc_en = $ent.descriptions.en.value.catch(null)
+              root.desc_ru = $ent.descriptions.ru.value.catch(null)
+              root.site_en = $ent.sitelinks.enwiki.title.catch(null)
+              root.site_ru = $ent.sitelinks.ruwiki.title.catch(null)
               root.commons_file = $ent.claims.P18.index(0).mainsnak.datavalue.value.string().catch(null)
         result_map: |
           root.is_human = this.is_human.catch(false)
@@ -331,7 +331,7 @@ pipeline:
             }
           } else { null }
 
-          root.details = [en_row, ru_row].filter(d -> d != null)
+          root.details = [$en_row, $ru_row].filter(d -> d != null)
         }
 
     # не удалось определить ни через кэш алиасов, ни через Wikidata — упоминание отбрасываем
@@ -502,7 +502,7 @@ output:
           - mapping: |
               root = if this.commons_file.catch(null) == null { deleted() } else { this }
           - mapping: |
-              root.photo_url = "${MINIO_PUBLIC_BASE_URL}/${MINIO_BUCKET_ACTOR_MEDIA}/" + this.actor_id.string() + "." + this.photo_ext.string().catch("jpg")
+              root.photo_url = "${MINIO_PUBLIC_BASE_URL}/${MINIO_BUCKET_ACTOR_MEDIA}/" + this.actor_id.string() + "." + this.photo_ext.or("jpg")
 
       # заливка фото в S3-совместимый output, endpoint переопределён под MINIO
       - label: out_minio_photo
@@ -528,7 +528,7 @@ output:
                 "tif": "image/tiff",
                 "tiff": "image/tiff"
               }
-              let ext = this.photo_ext.string().catch("jpg")
+              let ext = this.photo_ext.or("jpg")
               meta actor_id = this.actor_id.string()
               meta photo_ext = ext
               meta content_type = ext_to_mime.get(ext).catch("image/jpeg")
