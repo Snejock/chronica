@@ -374,8 +374,7 @@ output:
     pattern: fan_out_sequential
     outputs:
       # создание записи в хабе один раз при первом упоминании актора — должно случиться
-      # раньше остальных веток (у них FK на actor_id), поэтому стоит первой, а паттерн
-      # broker'а выше — fan_out_sequential, а не fan_out
+      # раньше остальных веток (у них FK на actor_id)
       - label: out_h_actors
         sql_raw:
           driver: postgres
@@ -535,9 +534,7 @@ output:
               meta actor_id = this.actor_id.string()
               meta photo_ext = $ext
               meta content_type = $ext_to_mime.get($ext).or("image/jpeg")
-              # ?width=800 — просим у Commons готовое превью нужной ширины вместо оригинала;
-              # в Redpanda Connect нет процессора ресайза, поэтому уменьшением занимается
-              # тумбнейлер самой Wikimedia
+              # ?width=800 — запрос Commons готовое превью нужной ширины вместо оригинала
               meta original_url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + this.commons_file.escape_url_path() + "?width=800"
           - label: http_fetch_photo_bytes
             http:
