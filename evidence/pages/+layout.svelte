@@ -253,16 +253,23 @@
   </div>
   <nav class="c-sidebar-nav">
     <a href="/" on:click={closeMenu}>
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <path d="M3 9.5L10 3L17 9.5V17H13V13H7V17H3V9.5Z" stroke="#78716c" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2L18.7 8.7Q19.5 9.5 19.5 10.7L19.5 18.5Q19.5 21 17 21L7 21Q4.5 21 4.5 18.5L4.5 10.7Q4.5 9.5 5.3 8.7Z M10 21L10 15.6Q10 14.6 11 14.6L13 14.6Q14 14.6 14 15.6L14 21Z" fill="currentColor"/>
       </svg>
       Главная
     </a>
     <a href="/stories" on:click={closeMenu}>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#78716c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5l6.74-6.76z"/>
-        <line x1="16" y1="8" x2="2" y2="22"/>
-        <line x1="17.5" y1="15" x2="9" y2="15"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <mask id="m-stories-sidebar">
+          <rect x="4" y="3" width="13" height="17" rx="2.6" fill="white"/>
+          <circle cx="16.3" cy="16.3" r="5.4" fill="white"/>
+          <rect x="6.6" y="6.8" width="8" height="1.7" rx="0.85" fill="black"/>
+          <rect x="6.6" y="10.2" width="8" height="1.7" rx="0.85" fill="black"/>
+          <rect x="6.6" y="13.6" width="4.4" height="1.7" rx="0.85" fill="black"/>
+          <rect x="15.8" y="13.6" width="1.1" height="3.2" rx="0.55" fill="black"/>
+          <rect x="16.3" y="15.9" width="2.6" height="1.1" rx="0.55" fill="black"/>
+        </mask>
+        <rect x="0" y="0" width="24" height="24" fill="currentColor" mask="url(#m-stories-sidebar)"/>
       </svg>
       Сюжеты
     </a>
@@ -275,17 +282,21 @@
     <div class="c-sidebar-divider"></div>
 
     <div class="c-sidebar-disabled" aria-disabled="true" tabindex="-1">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <mask id="m-support-sidebar">
+          <path d="M4 8.5C4 5.46 6.46 3 9.5 3H14.5C17.54 3 20 5.46 20 8.5C20 11.54 17.54 14 14.5 14H12.3L8 18.5V14H9.5C6.46 14 4 11.54 4 8.5Z" fill="white"/>
+          <circle cx="8.7" cy="8.5" r="1.15" fill="black"/>
+          <circle cx="12" cy="8.5" r="1.15" fill="black"/>
+          <circle cx="15.3" cy="8.5" r="1.15" fill="black"/>
+        </mask>
+        <rect x="0" y="0" width="24" height="24" fill="currentColor" mask="url(#m-support-sidebar)"/>
       </svg>
       Поддержка
     </div>
     <div class="c-sidebar-disabled" aria-disabled="true" tabindex="-1">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-        <circle cx="12" cy="7" r="4"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="8.2" r="3.6" fill="currentColor"/>
+        <path d="M4.5 21v-0.6C4.5 16.2 7.85 13 12 13s7.5 3.2 7.5 7.4V21H4.5Z" fill="currentColor"/>
       </svg>
       Профиль
     </div>
@@ -334,31 +345,42 @@
 <!-- Нижний "остров" — быстрая навигация -->
 <nav class="c-island" aria-label="Основная навигация">
   <a href="/" class="c-island-item" class:c-island-active={$page.url.pathname === '/'}>
-    <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
-      <path d="M3 9.5L10 3L17 9.5V17H13V13H7V17H3V9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2L18.7 8.7Q19.5 9.5 19.5 10.7L19.5 18.5Q19.5 21 17 21L7 21Q4.5 21 4.5 18.5L4.5 10.7Q4.5 9.5 5.3 8.7Z M10 21L10 15.6Q10 14.6 11 14.6L13 14.6Q14 14.6 14 15.6L14 21Z" fill="currentColor"/>
     </svg>
     <span>Главная</span>
   </a>
   <a href="/stories" class="c-island-item" class:c-island-active={$page.url.pathname.startsWith('/stories')}>
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5l6.74-6.76z"/>
-      <line x1="16" y1="8" x2="2" y2="22"/>
-      <line x1="17.5" y1="15" x2="9" y2="15"/>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <mask id="m-stories-island">
+        <rect x="4" y="3" width="13" height="17" rx="2.6" fill="white"/>
+        <circle cx="16.3" cy="16.3" r="5.4" fill="white"/>
+        <rect x="6.6" y="6.8" width="8" height="1.7" rx="0.85" fill="black"/>
+        <rect x="6.6" y="10.2" width="8" height="1.7" rx="0.85" fill="black"/>
+        <rect x="6.6" y="13.6" width="4.4" height="1.7" rx="0.85" fill="black"/>
+        <rect x="15.8" y="13.6" width="1.1" height="3.2" rx="0.55" fill="black"/>
+        <rect x="16.3" y="15.9" width="2.6" height="1.1" rx="0.55" fill="black"/>
+      </mask>
+      <rect x="0" y="0" width="24" height="24" fill="currentColor" mask="url(#m-stories-island)"/>
     </svg>
     <span>Сюжеты</span>
   </a>
   <div class="c-island-item c-island-disabled" aria-disabled="true" tabindex="-1">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10"/>
-      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <mask id="m-support-island">
+        <path d="M4 8.5C4 5.46 6.46 3 9.5 3H14.5C17.54 3 20 5.46 20 8.5C20 11.54 17.54 14 14.5 14H12.3L8 18.5V14H9.5C6.46 14 4 11.54 4 8.5Z" fill="white"/>
+        <circle cx="8.7" cy="8.5" r="1.15" fill="black"/>
+        <circle cx="12" cy="8.5" r="1.15" fill="black"/>
+        <circle cx="15.3" cy="8.5" r="1.15" fill="black"/>
+      </mask>
+      <rect x="0" y="0" width="24" height="24" fill="currentColor" mask="url(#m-support-island)"/>
     </svg>
     <span>Поддержка</span>
   </div>
   <div class="c-island-item c-island-disabled" aria-disabled="true" tabindex="-1">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-      <circle cx="12" cy="7" r="4"/>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="8.2" r="3.6" fill="currentColor"/>
+      <path d="M4.5 21v-0.6C4.5 16.2 7.85 13 12 13s7.5 3.2 7.5 7.4V21H4.5Z" fill="currentColor"/>
     </svg>
     <span>Профиль</span>
   </div>
@@ -597,7 +619,7 @@
     gap: 3px;
     border-radius: 22px;
     text-decoration: none;
-    color: #57534e;
+    color: #15140F;
     transition: color 0.15s ease, background 0.15s ease;
   }
   .c-island-item span {
