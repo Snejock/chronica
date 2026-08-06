@@ -120,10 +120,10 @@ pipeline:
         let news_link = this.news_link.string()
         root = this.actors.map_each(a -> {
           "news_link": $news_link,
-          "raw_actor_nm": a.actor_nm.string().catch(""),
-          "search_nm": a.search_nm.string().catch(a.actor_nm.string().catch("")),
-          "context_txt": a.context_txt.string().catch(""),
-          "confidence_prt": a.confidence_prt.number().catch(null)
+          "raw_actor_nm": a.actor_nm.or("").string().catch(""),
+          "search_nm": a.search_nm.or(a.actor_nm.or("")).string().catch(""),
+          "context_txt": a.context_txt.or("").string().catch(""),
+          "confidence_prt": a.confidence_prt.or(null).number().catch(null)
         })
 
     - mapping: |
@@ -199,9 +199,9 @@ pipeline:
               - mapping: 'root = {"search": []}'
         result_map: |
           root.candidates = this.search.catch([]).slice(0, 5).map_each(c -> {
-            "qid": c.id.string().catch(""),
-            "label": c.label.string().catch(""),
-            "description": c.description.string().catch("")
+            "qid": c.id.or("").string().catch(""),
+            "label": c.label.or("").string().catch(""),
+            "description": c.description.or("").string().catch("")
           })
 
     # выбор правильного кандидата
@@ -360,8 +360,8 @@ pipeline:
           - mapping: |
               let page = this.query.pages.values().index(0).catch(null)
               let info = page.imageinfo.index(0).catch(null)
-              root.author_nm = info.extmetadata.Artist.value.string().catch(null)
-              root.license_nm = info.extmetadata.LicenseShortName.value.string().catch(null)
+              root.author_nm = info.extmetadata.Artist.value.catch(null)
+              root.license_nm = info.extmetadata.LicenseShortName.value.catch(null)
         result_map: |
           root.author_nm = this.author_nm.catch(null)
           root.license_nm = this.license_nm.catch(null)
@@ -405,7 +405,7 @@ output:
             INSERT INTO dds.h_actors (actor_id, actor_type, _source_system)
             VALUES ($1, $2, 'WD')
             ON CONFLICT (actor_id) DO NOTHING;
-          args_mapping: 'root = [this.actor_id, this.actor_type]'
+          args_mapping: 'root = [this.actor_id, this.actor_type.or("person")]'
           batching:
             count: 10
             period: 1s
@@ -459,7 +459,7 @@ output:
             period: 1s
         processors:
           - mapping: |
-              root = if this.details.catch([]).length() == 0 { deleted() } else { this }
+              root = if this.details.or([]).length() == 0 { deleted() } else { this }
           - mapping: |
               let actor_id = this.actor_id
               root = this.details.map_each(d -> {
