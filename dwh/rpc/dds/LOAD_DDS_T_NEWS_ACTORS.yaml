@@ -535,7 +535,10 @@ output:
               meta actor_id = this.actor_id.string()
               meta photo_ext = $ext
               meta content_type = $ext_to_mime.get($ext).or("image/jpeg")
-              meta original_url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + this.commons_file.escape_url_path()
+              # ?width=800 — просим у Commons готовое превью нужной ширины вместо оригинала;
+              # в Redpanda Connect нет процессора ресайза, поэтому уменьшением занимается
+              # тумбнейлер самой Wikimedia
+              meta original_url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + this.commons_file.escape_url_path() + "?width=800"
           - label: http_fetch_photo_bytes
             http:
               url: '${! meta("original_url") }'
