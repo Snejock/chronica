@@ -318,7 +318,7 @@ pipeline:
               "language_code": "en",
               "canonical_nm": this.labels_en.catch(null),
               "description_txt": this.desc_en.catch(null),
-              "source_link": if this.site_en.catch(null) != null { "en.wikipedia.org/wiki/" + this.site_en.escape_url_query() } else { null }
+              "source_link": if this.site_en.catch(null) != null { "en.wikipedia.org/wiki/" + this.site_en.escape_url_path() } else { null }
             }
           } else { null }
 
@@ -327,7 +327,7 @@ pipeline:
               "language_code": "ru",
               "canonical_nm": this.labels_ru.catch(null),
               "description_txt": this.desc_ru.catch(null),
-              "source_link": if this.site_ru.catch(null) != null { "ru.wikipedia.org/wiki/" + this.site_ru.escape_url_query() } else { null }
+              "source_link": if this.site_ru.catch(null) != null { "ru.wikipedia.org/wiki/" + this.site_ru.escape_url_path() } else { null }
             }
           } else { null }
 
@@ -365,7 +365,7 @@ pipeline:
         result_map: |
           root.author_nm = this.author_nm.catch(null)
           root.license_nm = this.license_nm.catch(null)
-          root.source_link_photo = "commons.wikimedia.org/wiki/File:" + root.commons_file.escape_url_query()
+          root.source_link_photo = "commons.wikimedia.org/wiki/File:" + root.commons_file.escape_url_path()
           root.photo_ext = root.commons_file.split(".").index(-1).lowercase().catch("jpg")
 
 output:
@@ -535,7 +535,7 @@ output:
               meta actor_id = this.actor_id.string()
               meta photo_ext = ext
               meta content_type = ext_to_mime.get(ext).catch("image/jpeg")
-              meta original_url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + this.commons_file.escape_url_query()
+              meta original_url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + this.commons_file.escape_url_path()
           - label: http_fetch_photo_bytes
             http:
               url: '${! meta("original_url") }'
