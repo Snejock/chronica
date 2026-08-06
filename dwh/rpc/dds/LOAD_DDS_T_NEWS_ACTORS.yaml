@@ -388,53 +388,9 @@ output:
             count: 10
             period: 1s
 
-      # главная связка новость-актор — пишется в любом случае (кэш-хит или свежая резолюция)
-      - label: out_t_news_actors
-        sql_raw:
-          driver: postgres
-          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-          query: |
-            INSERT INTO dds.t_news_actors (news_id, actor_id, model_nm, published_dttm, actor_nm, confidence_prt)
-            SELECT xxh64($1), $2, $3, h.published_dttm, $4, $5
-            FROM dds.h_news h
-            WHERE h.news_id = xxh64($1)
-            ON CONFLICT (news_id, actor_id, model_nm) DO NOTHING;
-          args_mapping: |
-            root = [
-              this.news_link,
-              this.actor_id,
-              "deepseek-v4-flash:cloud",
-              this.raw_actor_nm,
-              this.confidence_prt.catch(null)
-            ]
-          batching:
-            count: 10
-            period: 1s
-
-      # фиксирование написание имени, которое привело к этому actor_id
-      - label: out_s_actor_aliases
-        sql_raw:
-          driver: postgres
-          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-          query: |
-            INSERT INTO dds.s_actor_aliases (alias_nm, actor_id)
-            VALUES ($1, $2)
-            ON CONFLICT (alias_nm) DO NOTHING;
-          args_mapping: 'root = [this.alias_key, this.actor_id]'
-          batching:
-            count: 10
-            period: 1s
-
-      - label: out_redis_alias
-        cache:
-          target: redis_cache
-          key: '${! meta("alias_cache_key") }'
-        processors:
-          - mapping: |
-              meta alias_cache_key = "lookup:dds.s_actor_aliases:" + this.alias_key
-              root = this.actor_id.string()
-
-      # детали по языкам — только когда актор резолвился свежо через Wikidata в этом сообщении
+      # детали по языкам — только когда актор резолвился свежо через Wikidata в этом сообщении;
+      # должна отработать раньше out_t_news_actors, чтобы там canonical_nm уже был в базе
+      # (см. LEFT JOIN ниже) — отсюда и её место в списке, и fan_out_sequential у broker'а
       - label: out_s_actor_details
         sql_raw:
           driver: postgres
@@ -472,6 +428,54 @@ output:
               })
           - unarchive:
               format: json_array
+
+      # главная связка новость-актор — пишется в любом случае (кэш-хит или свежая резолюция);
+      # actor_nm — canonical_nm из s_actor_details, если он уже есть, иначе сырое имя из статьи
+      - label: out_t_news_actors
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.t_news_actors (news_id, actor_id, model_nm, published_dttm, actor_nm, confidence_prt)
+            SELECT xxh64($1), $2, $3, h.published_dttm, COALESCE(sd.canonical_nm, $4), $5
+            FROM dds.h_news h
+            LEFT JOIN dds.s_actor_details sd ON sd.actor_id = $2 AND sd.language_code = 'en'
+            WHERE h.news_id = xxh64($1)
+            ON CONFLICT (news_id, actor_id, model_nm) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.news_link,
+              this.actor_id,
+              "deepseek-v4-flash:cloud",
+              this.raw_actor_nm,
+              this.confidence_prt.catch(null)
+            ]
+          batching:
+            count: 10
+            period: 1s
+
+      # фиксирование написание имени, которое привело к этому actor_id
+      - label: out_s_actor_aliases
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_actor_aliases (alias_nm, actor_id)
+            VALUES ($1, $2)
+            ON CONFLICT (alias_nm) DO NOTHING;
+          args_mapping: 'root = [this.alias_key, this.actor_id]'
+          batching:
+            count: 10
+            period: 1s
+
+      - label: out_redis_alias
+        cache:
+          target: redis_cache
+          key: '${! meta("alias_cache_key") }'
+        processors:
+          - mapping: |
+              meta alias_cache_key = "lookup:dds.s_actor_aliases:" + this.alias_key
+              root = this.actor_id.string()
 
       # метаданные фото в Postgres — путь в MinIO строится детерминированно по actor_id,
       # не дожидаясь ответа от aws_s3-заливки ниже
