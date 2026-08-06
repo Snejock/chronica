@@ -533,8 +533,8 @@ output:
               }
               let ext = this.photo_ext.or("jpg")
               meta actor_id = this.actor_id.string()
-              meta photo_ext = ext
-              meta content_type = ext_to_mime.get(ext).catch("image/jpeg")
+              meta photo_ext = $ext
+              meta content_type = $ext_to_mime.get($ext).or("image/jpeg")
               meta original_url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + this.commons_file.escape_url_path()
           - label: http_fetch_photo_bytes
             http:
