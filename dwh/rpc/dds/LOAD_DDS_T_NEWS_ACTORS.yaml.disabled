@@ -313,10 +313,15 @@ pipeline:
           root.actor_id = this.chosen_qid
           root.actor_type = "person"
 
+          # для canonical_nm — фолбэк, если у сущности в Wikidata нет label на этом языке
+          # (бывает: label не заведён, а sitelink/description при этом есть): берём тайтл
+          # соответствующей википедии — он гарантированно на том же языке, что и строка.
+          # search_nm сюда не годится: это имя из англоязычной статьи (единственный рабочий
+          # язык LLM-извлечения), в ru_row оно было бы английским именем под ru-строкой
           let en_row = if this.labels_en.catch(null) != null || this.desc_en.catch(null) != null {
             {
               "language_code": "en",
-              "canonical_nm": this.labels_en.catch(null),
+              "canonical_nm": this.labels_en.catch(null).or(this.site_en.catch(null)).or(this.search_nm.catch(null)),
               "description_txt": this.desc_en.catch(null),
               "source_link": if this.site_en.catch(null) != null { "en.wikipedia.org/wiki/" + this.site_en.escape_url_path() } else { null }
             }
@@ -325,7 +330,7 @@ pipeline:
           let ru_row = if this.labels_ru.catch(null) != null || this.desc_ru.catch(null) != null {
             {
               "language_code": "ru",
-              "canonical_nm": this.labels_ru.catch(null),
+              "canonical_nm": this.labels_ru.catch(null).or(this.site_ru.catch(null)),
               "description_txt": this.desc_ru.catch(null),
               "source_link": if this.site_ru.catch(null) != null { "ru.wikipedia.org/wiki/" + this.site_ru.escape_url_path() } else { null }
             }
