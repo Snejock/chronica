@@ -141,11 +141,25 @@ pipeline:
 
     # резолв актора
 
-    # проверка наличия алиаса в кэше (redis)
+    # проверка наличия алиаса в кэше (redis) — сначала дешёвый exists (никогда не ошибается),
+    # чтобы не заваливать метрики/логи штатными cache-miss на operator: get
     - branch:
         processors:
           - try:
-              - label: redis_check_alias
+              - label: redis_check_alias_exists
+                cache:
+                  resource: redis_cache
+                  operator: exists
+                  key: "lookup:dds.s_actor_aliases:${! this.alias_key }"
+        result_map: 'root.alias_cached = content().bool().catch(false)'
+
+    # чтение значения — только если ключ точно есть
+    - branch:
+        request_map: |
+          root = if this.alias_cached { this } else { deleted() }
+        processors:
+          - try:
+              - label: redis_check_alias_get
                 cache:
                   resource: redis_cache
                   operator: get
