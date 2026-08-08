@@ -101,10 +101,10 @@ pipeline:
         result_map: |
           root.actors = this.actors
 
-    # отметка новости успешно обработанной, только если LLM-вызов реально отработал
+    # отметка новости обработанной сразу — только когда LLM отработал и акторы не найдены
     - branch:
         request_map: |
-          root = if this.actors != null { this } else { deleted() }
+          root = if this.actors != null && this.actors.type() == "array" && this.actors.length() == 0 { this } else { deleted() }
         processors:
           - cache:
               resource: redis_cache
@@ -330,8 +330,6 @@ pipeline:
           # для canonical_nm — фолбэк, если у сущности в Wikidata нет label на этом языке
           # (бывает: label не заведён, а sitelink/description при этом есть): берём тайтл
           # соответствующей википедии — он гарантированно на том же языке, что и строка.
-          # search_nm сюда не годится: это имя из англоязычной статьи (единственный рабочий
-          # язык LLM-извлечения), в ru_row оно было бы английским именем под ru-строкой
           let en_row = if this.labels_en.catch(null) != null || this.desc_en.catch(null) != null {
             {
               "language_code": "en",
@@ -480,6 +478,16 @@ output:
           batching:
             count: 10
             period: 1s
+
+      # отметка новости обработанной для непустого actors
+      - label: out_redis_processed
+        cache:
+          target: redis_cache
+          key: '${! meta("processed_cache_key") }'
+        processors:
+          - mapping: |
+              meta processed_cache_key = "processed:dds.t_news_actors:" + this.news_link
+              root = "true"
 
       # фиксирование написание имени, которое привело к этому actor_id
       - label: out_s_actor_aliases
