@@ -27,7 +27,8 @@ MOEX → moex-fetcher ─────────┘                            
 | `common/` | Shared package `chronica-common` (Pydantic models, utils), workspace member |
 | `evidence/` | Evidence.dev (SvelteKit) BI dashboard |
 | `.claude/agents/` | Custom subagents (technical-writer, evidence-developer) |
-| `docker-compose.yaml` (root) | `include:`-only orchestrator; currently pulls in most of the compose files above (`dwh/compose/dbt`, `dwh/compose/minio`, and `services/moex-fetcher` are not included/commented out) |
+| `.claude/skills/` | Custom skills (check-dev-site, connect-servers, generate-embedding-ollama, logs-docker, query-postgres, write-anchor) |
+| `docker-compose.yaml` (root) | `include:`-only orchestrator; currently pulls in most of the compose files above (`dwh/compose/dbt` and `services/moex-fetcher` are not included/commented out) |
 
 There is **no `ai-translator` service** — translation happens inside the
 `dwh/rpc/dds/*_S_NEWS_TEXTS.yaml` pipelines (LLM branch), not a standalone service.
@@ -138,7 +139,7 @@ reading from the `bds`/`dm` layers. Pages live under `evidence/pages/*.md`. Dev 
   interpolation (`${...}` in `dwh/compose/*`), every service's `env_file:` (`services/*/compose/`,
   `evidence/compose/`), and the shared pydantic `Config` (`common/models/Config.py`). Nested-style
   keys (`POSTGRES__*`, `CLICKHOUSE__*`, `BROKER__*`, `DEEPSEEK__API_KEY`, `GOOGLE_AI__API_KEY`).
-  Root `.env.local` is an inert copy of local-dev values (external `loki` addresses/ports) —
+  Root `.env.server` is an inert copy of local-dev values (external `loki` addresses/ports) —
   nothing reads it automatically; to develop from a laptop, manually copy it over `.env`.
 - CI/CD: `.github/workflows/deploy.yaml` — push to `master` triggers an SSH step that runs
   `git fetch origin master && git reset --hard origin/master` on the `loki` host. Pull-based,

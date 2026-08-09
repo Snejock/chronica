@@ -97,7 +97,7 @@ cd evidence/compose && docker compose up chr-evidence-prod
 
 - RSS-источники: `services/rss-fetcher/config/rss_feeds.yaml`
 - MOEX (тикеры, расписание): `services/moex-fetcher/config/config.yml`
-- Переменные окружения: `.env` (единственный активный конфиг; `.env.local` — инертная копия
+- Переменные окружения: `.env` (единственный активный конфиг; `.env.server` — инертная копия
   локальных dev-значений для ручной подмены)
 - Миграции PostgreSQL: `dwh/migrations/pg/`
 - Миграции ClickHouse: `dwh/migrations/ch/`
