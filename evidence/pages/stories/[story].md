@@ -1178,4 +1178,12 @@ ORDER BY rank_idx
   <a href="/stories/{params.story}/{entry.iso_dt}" aria-hidden="true" tabindex="-1" style="display:none"></a>
 {/each}
 
+<!-- Ссылка на страницу актёра в разметке есть только внутри поповера (открывается
+     по тапу), а он в статике при пререндере не раскрыт -- краулер SvelteKit её не
+     находит. Без этого блока `/stories/[story]/actors/[actor]` не пререндерится и
+     билд падает ("marked as prerenderable, but were not prerendered"). -->
+{#each q_actors as a}
+  <a href="/stories/{params.story}/actors/{a.actor_id}" aria-hidden="true" tabindex="-1" style="display:none"></a>
+{/each}
+
 </div>
