@@ -4,7 +4,7 @@ hide_breadcrumbs: true
 ---
 
 <script>
-  import { getContext as _getCtx } from 'svelte';
+  import { getContext as _getCtx, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { slide, draw } from 'svelte/transition';
   const breadcrumb = _getCtx('breadcrumb');
@@ -118,19 +118,22 @@ hide_breadcrumbs: true
   let openChartId = null;
   let openEventId = null;
 
-  $: visible = q_stories_summaries.slice(0, shown);
+  // q_stories_summaries отсортирован ASC (старые слева, новые справа, см. q_key_events
+  // выше) — видимое окно берём с конца массива, т.е. от самых свежих дней.
+  $: visible = q_stories_summaries.slice(Math.max(0, q_stories_summaries.length - shown));
   $: hasMore = shown < q_stories_summaries.length;
 
-  // Горизонтальный таймлайн ключевых событий: 4 уровня высоты, равномерный шаг
-  // level 0=above-far, 1=below-far, 2=above-close, 3=below-close
-  // Трек: height=280px, center=140px, dot=11px
+  // Горизонтальный таймлайн ключевых событий: слева старые даты, справа новые
+  // (q_key_events отсортирован ASC по dt, так что последний элемент — самый свежий).
+  // 4 уровня высоты, равномерный шаг. Трек: height=280px, center=140px, dot=11px
   const KE_SIDE_PAD    = 100;
   const KE_GAP         = 165;
   $: keyEventLayout = (() => {
     if (!q_key_events || q_key_events.length === 0) return { trackW: 0, items: [] };
-    const trackW = Math.max(400, q_key_events.length * KE_GAP + KE_SIDE_PAD * 2);
+    const trackW = Math.max(400, (q_key_events.length - 1) * KE_GAP + KE_SIDE_PAD * 2);
+    const lastIdx = q_key_events.length - 1;
     const items  = q_key_events.map((ev, i) => ({
-      ...ev, id: i, x: KE_SIDE_PAD + i * KE_GAP, above: i % 2 === 0,
+      ...ev, id: i, x: KE_SIDE_PAD + i * KE_GAP, above: i % 2 === 0, fresh: i === lastIdx,
     }));
     return { trackW, items };
   })();
@@ -441,7 +444,7 @@ hide_breadcrumbs: true
     };
   }
 
-  // Прокрутка к правому краю (последние события) при монтировании
+  // Прокрутка к правому краю (последние события/дни) при монтировании
   function autoScrollRight(node) {
     const t = setTimeout(() => { node.scrollLeft = node.scrollWidth; }, 60);
     return { destroy() { clearTimeout(t); } };
@@ -464,7 +467,7 @@ hide_breadcrumbs: true
 
   let expandedScrollLeft = null;
 
-  function onChronicleScroll(e) {
+  async function onChronicleScroll(e) {
     const el = e.currentTarget;
     updateGrayscale();
     const hasExpanded = Object.values(expanded).some(Boolean);
@@ -480,8 +483,15 @@ hide_breadcrumbs: true
     }
 
     if (!hasMore) return;
-    if (el.scrollLeft + el.clientWidth >= el.scrollWidth - el.clientWidth) {
+    // Слева теперь прошлое: догружаем более старые дни при приближении к
+    // левому краю. Новые карточки при этом встают ПЕРЕД уже отрендеренными
+    // (см. keyed each ниже), поэтому компенсируем scrollLeft на их ширину —
+    // иначе текущий вид дёрнется вправо на ширину подгруженных карточек.
+    if (el.scrollLeft <= el.clientWidth) {
+      const prevScrollWidth = el.scrollWidth;
       shown += PAGE_SIZE;
+      await tick();
+      el.scrollLeft += el.scrollWidth - prevScrollWidth;
     }
   }
 
@@ -604,7 +614,7 @@ hide_breadcrumbs: true
   .ke-rail {
     height: 3px;
     border-radius: 2px;
-    background: linear-gradient(to right, #C4162A 0%, #FF9830 50%, #FADE2A 100%);
+    background: linear-gradient(to right, #FADE2A 0%, #FF9830 50%, #C4162A 100%);
   }
   .ke-tag {
     transition: color 0.2s, transform 0.2s;
@@ -668,14 +678,14 @@ hide_breadcrumbs: true
     object-fit: cover;
     display: block;
     border: 2px solid transparent;
-    opacity: 0.68;
-    filter: grayscale(0.35);
     transition: opacity 0.25s ease, filter 0.25s ease, border-color 0.25s ease;
   }
   .actor-item.is-active .actor-avatar {
-    opacity: 1;
-    filter: grayscale(0);
     border-color: #C0401C;
+  }
+  .actors-rail.has-selection .actor-item:not(.is-active) .actor-avatar {
+    opacity: 0.68;
+    filter: grayscale(0.35);
   }
   .actor-placeholder {
     width: 64px;
@@ -689,12 +699,13 @@ hide_breadcrumbs: true
     font-size: 18px;
     font-weight: 600;
     border: 2px solid transparent;
-    opacity: 0.68;
     transition: opacity 0.25s ease, border-color 0.25s ease;
   }
   .actor-item.is-active .actor-placeholder {
-    opacity: 1;
     border-color: #C0401C;
+  }
+  .actors-rail.has-selection .actor-item:not(.is-active) .actor-placeholder {
+    opacity: 0.68;
   }
 
 </style>
@@ -733,7 +744,7 @@ SELECT
 FROM dwh_pg_1.story_summaries_d
 WHERE language_code = 'ru'
   AND story_id = ${params.story}
-ORDER BY dt DESC
+ORDER BY dt ASC
 ```
 
 ```sql q_key_events
@@ -760,7 +771,7 @@ SELECT
 FROM dwh_pg_1.story_key_events
 WHERE story_id = ${params.story}
   AND language_code = 'ru'
-ORDER BY dt DESC
+ORDER BY dt ASC
 ```
 
 ```sql q_forecasts
@@ -856,7 +867,21 @@ ORDER BY rank_idx
   <div class="ke-fade-l"></div>
   <div class="ke-fade-r"></div>
 
-  <div class="key-events-track" use:dragScroll
+  <!-- Подсказка «левее — прошлое»: закреплена у края обёртки, а не трека,
+       поэтому не уезжает при скролле. Только если правда есть куда скроллить. -->
+  {#if keyEventLayout.items.length > 1}
+  <div style="position:absolute; top:calc(50% - 34px); left:14px; z-index:5; pointer-events:none">
+    <span style="font-size:11px; font-weight:400; letter-spacing:0.04em; color:#C0401C; white-space:nowrap">‹ ранее</span>
+  </div>
+  {/if}
+
+  <!-- {#key params.story}: use:-экшены (dragScroll/autoScrollRight) срабатывают
+       только при создании DOM-узла. При переходе между сюжетами по клиенту
+       SvelteKit этот компонент переиспользуется (меняются только params), сам
+       div без key не пересоздаётся — автоскролл к свежим событиям на новом
+       сюжете просто не срабатывал бы повторно. -->
+  {#key params.story}
+  <div class="key-events-track" use:dragScroll use:autoScrollRight
        style="overflow-x:auto; overscroll-behavior-x:contain; padding-bottom:4px">
     <div style="position:relative; width:{keyEventLayout.trackW}px; height:300px; min-width:100%">
 
@@ -875,7 +900,7 @@ ORDER BY rank_idx
 
       {#each keyEventLayout.items as ev}
         {@const _isOpen = openEventId === ev.id}
-        {@const _isFresh = ev.id === 0}
+        {@const _isFresh = ev.fresh}
 
         <!-- Дата под точкой -->
         <div style="position:absolute; top:calc(50% + 9px); left:{ev.x}px; transform:translateX(-50%); text-align:center; pointer-events:none; z-index:3">
@@ -920,6 +945,7 @@ ORDER BY rank_idx
       {/each}
     </div>
   </div>
+  {/key}
 
 </div>
 {:else}
@@ -931,8 +957,8 @@ ORDER BY rank_idx
 {#if q_actors.length >= 3}
 ## Действующие лица
 
-<div class="not-prose mt-2 mb-8" style="position:relative; isolation:isolate; z-index:var(--z-popover)">
-  <div class="actors-rail" use:dragScroll>
+<div class="not-prose mt-2 mb-8" style="position:relative; isolation:isolate; z-index:var(--z-content-raised)">
+  <div class="actors-rail {selectedActor !== null ? 'has-selection' : ''}" use:dragScroll>
     {#each q_actors as a, i}
       <button type="button" class="actor-item {selectedActor === i ? 'is-active' : ''}"
         use:tappable on:tap={() => { selectedActor === i ? goto(`/stories/${params.story}/actors/${a.actor_id}`) : (selectedActor = i); }}
@@ -985,9 +1011,13 @@ ORDER BY rank_idx
 
 {#if q_stories_summaries.length > 0}
 <div class="not-prose mt-4" style="margin:0 -12px">
-  <div class="chronicle-carousel" use:dragScroll on:scroll={onChronicleScroll}
+  <!-- {#key params.story}: те же use:-экшены (dragScroll/autoScrollRight), что и
+       в «Ключевых событиях» выше — без key при переходе между сюжетами по
+       клиенту карусель не пересоздаётся и не спрыгивает к свежим карточкам. -->
+  {#key params.story}
+  <div class="chronicle-carousel" use:dragScroll use:autoScrollRight on:scroll={onChronicleScroll}
        bind:this={chronicleEl}>
-    {#each visible as entry, i}
+    {#each visible as entry, i (entry.iso_dt)}
       {@const _p = entry.iso_dt.split('-')}
       {@const _day = parseInt(_p[2])}
       {@const _year = parseInt(_p[0])}
@@ -1007,12 +1037,12 @@ ORDER BY rank_idx
              style="background:#faf9f7; border-color:#e7e5e4; margin:0 12px 12px 12px">
           <div class="px-4 py-3">
 
-            {#if dayImages[entry.iso_dt] && !imgError[i]}
+            {#if dayImages[entry.iso_dt] && !imgError[entry.iso_dt]}
               <div class="-mx-4 -mt-3 mb-3">
                 <div style="aspect-ratio:16/9; background:#f5f4f2">
                   <img src={absUrl(dayImages[entry.iso_dt])} alt="" loading="lazy"
-                       on:error={() => { imgError[i] = true; imgError = imgError; }}
-                       on:load={(e) => { if (e.target.naturalWidth < 300) { imgError[i] = true; imgError = imgError; } }}
+                       on:error={() => { imgError[entry.iso_dt] = true; imgError = imgError; }}
+                       on:load={(e) => { if (e.target.naturalWidth < 300) { imgError[entry.iso_dt] = true; imgError = imgError; } }}
                        class="w-full h-full object-cover"
                        style="filter:grayscale({slideGrayscale[i] ?? 1}); transition:filter 0.3s ease" />
                 </div>
@@ -1025,11 +1055,11 @@ ORDER BY rank_idx
             {/if}
 
             <p class="text-sm font-semibold leading-snug mb-2"
-               style="color:#15140F; min-height:5.5em; {expanded[i] ? '' : 'display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden'}"
+               style="color:#15140F; min-height:5.5em; {expanded[entry.iso_dt] ? '' : 'display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden'}"
                >{entry.headline_txt}</p>
 
             {#if entry.summary_txt}
-              {#if expanded[i]}
+              {#if expanded[entry.iso_dt]}
                 <div in:slide={{ duration: 320 }} out:slide={{ duration: 200 }}>
                   <p class="text-sm leading-relaxed mb-2" style="color:#57534e">{entry.summary_txt}</p>
                 </div>
@@ -1038,9 +1068,9 @@ ORDER BY rank_idx
                 class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none"
                 style="color:#a8a29e; background:none; border:none; padding:0"
                 on:pointerup|stopPropagation
-                on:click|preventDefault|stopPropagation={() => { expanded[i] = !expanded[i]; expanded = expanded; }}>
-                {expanded[i] ? 'Скрыть' : 'Показать полностью'}
-                <span style="display:inline-flex; transform:rotate({expanded[i] ? '180deg' : '0deg'}); transition:transform 0.2s">
+                on:click|preventDefault|stopPropagation={() => { expanded[entry.iso_dt] = !expanded[entry.iso_dt]; expanded = expanded; }}>
+                {expanded[entry.iso_dt] ? 'Скрыть' : 'Показать полностью'}
+                <span style="display:inline-flex; transform:rotate({expanded[entry.iso_dt] ? '180deg' : '0deg'}); transition:transform 0.2s">
                   <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
                     <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
@@ -1054,6 +1084,7 @@ ORDER BY rank_idx
       </div>
     {/each}
   </div>
+  {/key}
 
 </div>
 {:else}
