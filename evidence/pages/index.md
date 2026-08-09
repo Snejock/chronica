@@ -214,6 +214,7 @@ hide_breadcrumbs: true
     color: #F1EADB;
     background: #C0401C;
     padding: 10px 28px;
+    border-radius: 8px;
     text-decoration: none;
     transition: background 0.2s ease;
   }

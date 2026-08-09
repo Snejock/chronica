@@ -785,6 +785,7 @@
     color: #F1EADB;
     background: #C0401C;
     padding: 14px 36px;
+    border-radius: 8px;
     text-decoration: none;
     transition: background 0.2s ease, transform 0.15s ease;
   }
