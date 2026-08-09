@@ -11,9 +11,9 @@ hide_breadcrumbs: true
     breadcrumb?.set({ storyName: q_story_name[0].story_nm, actorName: q_actor?.[0]?.canonical_nm });
   }
 
-  // Фото лежит в MinIO как путь без хоста (см. dds.s_actor_media.photo_link) -- на этом
-  // этапе достраиваем dev-адрес; прод-домен для MinIO ещё не настроен (отдельная задача).
-  const MEDIA_BASE = 'http://192.168.1.15:39200';
+  // Фото лежит в MinIO как путь без хоста (см. dds.s_actor_media.photo_link) -- достраиваем
+  // публичным доменом (реверс-прокси -> 192.168.1.15:39200, TLS выпущен на этот хост).
+  const MEDIA_BASE = 'https://media.chronica.life';
   function mediaUrl(path) {
     if (!path) return null;
     return MEDIA_BASE + path;

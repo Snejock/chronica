@@ -161,8 +161,8 @@ hide_breadcrumbs: true
   $: dayImages = Object.fromEntries((q_day_images || []).map(r => [r.day, r.image_url]));
 
   // Действующие лица: фото лежат в MinIO как путь без хоста (см. dds.s_actor_media.photo_link) --
-  // на этом этапе достраиваем dev-адрес; прод-домен для MinIO ещё не настроен (отдельная задача).
-  const MEDIA_BASE = 'http://192.168.1.15:39200';
+  // достраиваем публичным доменом (реверс-прокси -> 192.168.1.15:39200, TLS выпущен на этот хост).
+  const MEDIA_BASE = 'https://media.chronica.life';
   function mediaUrl(path) {
     if (!path) return null;
     return MEDIA_BASE + path;
