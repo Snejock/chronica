@@ -449,10 +449,10 @@ ORDER BY published_dttm DESC
   {#each groupedByDay as day (day.dayKey)}
     <div class="mb-2">
       <!-- Разделитель дня: uppercase, приглушённый цвет, маскирует вертикальную линию
-           таймлайна белым фоном поверх линии. Подписи времени суток внутри дня
+           таймлайна фоном страницы поверх линии. Подписи времени суток внутри дня
            (Вечер/День/Утро/Ночь) на этой странице не показываем — сгруппированы,
            но без собственного заголовка, чтобы не дублировать структуру. -->
-      <p class="text-xs font-medium uppercase tracking-widest mb-2" style="color:#c4bca9; margin-left:-44px; position:relative; z-index:2; background:#ffffff">{day.dayLabel}</p>
+      <p class="text-xs font-medium uppercase tracking-widest mb-2" style="color:#c4bca9; margin-left:-44px; position:relative; z-index:2; background:#faf9f7">{day.dayLabel}</p>
 
       {#each day.groups as group}
       <div class="mb-4">
