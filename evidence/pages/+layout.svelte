@@ -105,7 +105,8 @@
 
   $: storyId = $page.params?.story;
   $: day = $page.params?.day;
-  $: parentUrl = day ? `/stories/${storyId}` : storyId ? '/stories' : '/';
+  $: actorId = $page.params?.actor;
+  $: parentUrl = (day || actorId) ? `/stories/${storyId}` : storyId ? '/stories' : '/';
   $: isHome = $page.url.pathname === '/';
   $: if (tgWebApp) {
     if (isHome) tgWebApp.BackButton.hide();
@@ -316,18 +317,24 @@
     <nav class="c-breadcrumb">
       {#if !storyId}
         <span class="c-current">Сюжеты</span>
-      {:else if !day}
+      {:else if !day && !actorId}
         <a href="/stories">Сюжеты</a>
         {#if $breadcrumbStore?.storyName}
           <span class="c-sep">›</span>
           <span class="c-current">{$breadcrumbStore.storyName}</span>
         {/if}
-      {:else}
+      {:else if day}
         <a href="/stories">Сюжеты</a>
         <span class="c-sep">›</span>
         <a href="/stories/{storyId}" class="c-trunc">{$breadcrumbStore?.storyName || '…'}</a>
         <span class="c-sep">›</span>
         <span class="c-day">{formatDay(day)}</span>
+      {:else}
+        <a href="/stories">Сюжеты</a>
+        <span class="c-sep">›</span>
+        <a href="/stories/{storyId}" class="c-trunc">{$breadcrumbStore?.storyName || '…'}</a>
+        <span class="c-sep">›</span>
+        <span class="c-day">{$breadcrumbStore?.actorName || '…'}</span>
       {/if}
     </nav>
   {/if}
@@ -404,7 +411,12 @@
   }
   :global(header) { display: none !important; }
   :global(html), :global(body) {
-    background-color: #faf9f7;
+    /* !important -- Evidence сам вешает на <body> класс с фоном из
+       theme.colors.base.light (evidence.config.yaml, сейчас #ffffff), у которого
+       выше специфичность (класс vs голый селектор), чем у это правила -- без
+       !important body красится в белый и обрывается по высоте контента, а ниже
+       на коротких страницах проглядывает бежевый html */
+    background-color: #faf9f7 !important;
     overscroll-behavior-y: none;
     min-height: 100dvh;
   }

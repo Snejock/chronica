@@ -157,6 +157,29 @@ hide_breadcrumbs: true
 
   $: dayImages = Object.fromEntries((q_day_images || []).map(r => [r.day, r.image_url]));
 
+  // Действующие лица: фото лежат в MinIO как путь без хоста (см. dds.s_actor_media.photo_link) --
+  // на этом этапе достраиваем dev-адрес; прод-домен для MinIO ещё не настроен (отдельная задача).
+  const MEDIA_BASE = 'http://192.168.1.15:39200';
+  function mediaUrl(path) {
+    if (!path) return null;
+    return MEDIA_BASE + path;
+  }
+
+  let selectedActor = null;
+  let actorImgError = {};
+
+  function initials(nm) {
+    if (!nm) return '';
+    const parts = nm.trim().split(/\s+/);
+    return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase();
+  }
+
+  const MONTHS_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  function fmtDate(dttm) {
+    const d = new Date(dttm);
+    return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+  }
+
   function clampDetect(node, uid) {
     const measure = () => {
       const lh = parseFloat(getComputedStyle(node).lineHeight) || 20;
@@ -615,6 +638,65 @@ hide_breadcrumbs: true
     pointer-events: none;
   }
 
+  /* --- Действующие лица: ряд аватаров --- */
+  .actors-rail {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 4px 12px 6px;
+  }
+  .actors-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .actor-item {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 64px;
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+  .actor-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+    border: 2px solid transparent;
+    opacity: 0.68;
+    filter: grayscale(0.35);
+    transition: opacity 0.25s ease, filter 0.25s ease, border-color 0.25s ease;
+  }
+  .actor-item.is-active .actor-avatar {
+    opacity: 1;
+    filter: grayscale(0);
+    border-color: #C0401C;
+  }
+  .actor-placeholder {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f0ede8;
+    color: #a8a29e;
+    font-size: 18px;
+    font-weight: 600;
+    border: 2px solid transparent;
+    opacity: 0.68;
+    transition: opacity 0.25s ease, border-color 0.25s ease;
+  }
+  .actor-item.is-active .actor-placeholder {
+    opacity: 1;
+    border-color: #C0401C;
+  }
+
 </style>
 
 ```sql q_story
@@ -745,7 +827,17 @@ WHERE rn = 1
 ORDER BY day
 ```
 
-<div bind:this={pageEl}>
+```sql q_actors
+SELECT actor_id, canonical_nm, description_txt, source_link,
+       photo_link, author_nm, license_nm,
+       mentions_cnt, last_dttm, rank_idx
+FROM dwh_pg_1.b_story_actors
+WHERE story_id = ${params.story}
+  AND language_code = 'ru'
+ORDER BY rank_idx
+```
+
+<div bind:this={pageEl} on:click={() => { if (selectedActor !== null) selectedActor = null; }}>
 
 {#if q_story[0]}
 # {q_story[0].story_nm}
@@ -833,6 +925,59 @@ ORDER BY day
 {:else}
 <div class="not-prose mt-4 p-5 rounded-xl border" style="background:#faf9f7; border-color:#e7e5e4">
   <p class="text-sm" style="color:#a8a29e">Ключевые события ещё не определены.</p>
+</div>
+{/if}
+
+{#if q_actors.length >= 3}
+## Действующие лица
+
+<div class="not-prose mt-2 mb-8" style="position:relative; isolation:isolate; z-index:var(--z-popover)">
+  <div class="actors-rail" use:dragScroll>
+    {#each q_actors as a, i}
+      <button type="button" class="actor-item {selectedActor === i ? 'is-active' : ''}"
+        use:tappable on:tap={() => { selectedActor === i ? goto(`/stories/${params.story}/actors/${a.actor_id}`) : (selectedActor = i); }}
+        on:click|stopPropagation>
+        {#if mediaUrl(a.photo_link) && !actorImgError[a.actor_id]}
+          <img class="actor-avatar" src={mediaUrl(a.photo_link)} alt="" loading="lazy"
+               on:error={() => { actorImgError[a.actor_id] = true; actorImgError = actorImgError; }}
+               on:load={(e) => { if (e.target.naturalWidth < 80) { actorImgError[a.actor_id] = true; actorImgError = actorImgError; } }} />
+        {:else}
+          <div class="actor-placeholder">{initials(a.canonical_nm)}</div>
+        {/if}
+        <span class="text-center" style="font-size:11px; line-height:1.25; color:#57534e; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden">{a.canonical_nm}</span>
+      </button>
+    {/each}
+  </div>
+
+  {#key selectedActor}
+    {#if q_actors[selectedActor]}
+      {@const a = q_actors[selectedActor]}
+      <!-- Поповер поверх контента, не раздвигает вёрстку; закрывается кликом в любое место
+           страницы (см. on:click на <div bind:this={pageEl}>) -->
+      <div class="rounded-xl border overflow-hidden"
+           transition:slide|local={{ duration: 180 }}
+           style="position:absolute; left:12px; right:12px; top:100%; margin-top:6px;
+                  background:#faf9f7; border-color:#e7e5e4; box-shadow:0 10px 28px rgba(0,0,0,0.14);
+                  z-index:var(--z-popover)"
+           on:click|stopPropagation>
+        <div class="px-4 py-3">
+          <p class="text-sm font-semibold leading-snug mb-1" style="color:#15140F">{a.canonical_nm}</p>
+          {#if a.description_txt}
+            <p class="text-sm leading-relaxed mb-2" style="color:#57534e">{a.description_txt}</p>
+          {/if}
+          <p class="text-xs mb-2" style="color:#a8a29e">{a.mentions_cnt} упоминани{a.mentions_cnt === 1 ? 'е' : a.mentions_cnt < 5 ? 'я' : 'й'} · последнее {fmtDate(a.last_dttm)}</p>
+          <div class="flex items-center gap-3">
+            <a href="/stories/{params.story}/actors/{a.actor_id}" class="text-xs font-medium" style="color:#C0401C">Публикации →</a>
+          </div>
+          {#if a.source_link || (a.photo_link && a.author_nm)}
+            <p class="text-xs mt-2" style="color:#c4bca9">
+              {#if a.photo_link && a.author_nm}фото: {a.author_nm}{#if a.license_nm} · {a.license_nm}{/if}{#if a.source_link} · {/if}{/if}{#if a.source_link}<a href={absUrl(a.source_link)} target="_blank" rel="noopener" style="color:#c4bca9; text-decoration:underline">источник</a>{/if}
+            </p>
+          {/if}
+        </div>
+      </div>
+    {/if}
+  {/key}
 </div>
 {/if}
 
