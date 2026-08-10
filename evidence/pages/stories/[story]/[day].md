@@ -338,7 +338,7 @@ ORDER BY published_dttm DESC
 
   {#each grouped as group}
     <div class="mb-4">
-      <p class="text-xs font-medium uppercase tracking-widest mb-2" style="color:#c4bca9; margin-left:-44px; position:relative; z-index:2; background:#ffffff">{group.label}</p>
+      <p class="text-xs font-medium uppercase tracking-widest mb-2" style="color:#c4bca9; margin-left:-44px; position:relative; z-index:2; background:#faf9f7">{group.label}</p>
       <div class="flex flex-col">
         {#each group.items as item}
           {@const _t = new Date(item.published_dttm).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}

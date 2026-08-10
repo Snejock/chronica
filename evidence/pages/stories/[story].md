@@ -113,9 +113,7 @@ hide_breadcrumbs: true
   const PAGE_SIZE = 3;
   let shown = PAGE_SIZE;
   let activityOpen = false;
-  let slidForecastId = null;
   let openInfoId = null;
-  let openChartId = null;
   let openEventId = null;
 
   // q_stories_summaries отсортирован ASC (старые слева, новые справа, см. q_key_events
@@ -214,12 +212,6 @@ hide_breadcrumbs: true
     return lerpColor('#FF9830', '#FADE2A', (intensity - 0.5) / 0.5);
   }
 
-  // Добавляет альфа-канал к цвету в формате rgb(...)
-  function withAlpha(rgbStr, alpha) {
-    const m = rgbStr.match(/\d+/g);
-    return `rgba(${m[0]},${m[1]},${m[2]},${alpha})`;
-  }
-
   function newsBarChart(rows) {
     const maxCnt = Math.max(1, ...rows.map(r => +r.cnt));
     return {
@@ -279,11 +271,15 @@ hide_breadcrumbs: true
     };
   }
 
-  function forecastChart(rows, pct) {
+  function forecastChart(rows) {
     const vals = rows.map(r => +r.p_posterior_prt);
     const lo = Math.max(0, Math.min(...vals) - 0.05);
     const hi = Math.min(1, Math.max(...vals) + 0.05);
-    const lineColor = barTopColor(Math.max(0, Math.min(1, pct / 100)));
+    // Стандартный оранжевый, не зависит от текущей вероятности. rgba-версия задана
+    // напрямую (не через withAlpha) -- та ждёт строку вида rgb(r,g,b), как отдаёт
+    // barTopColor/lerpColor, а не hex.
+    const lineColor = '#FF9830';
+    const lineColorSoft = 'rgba(255, 152, 48, 0.25)';
     return {
       backgroundColor: '#faf9f7',
       animation: true,
@@ -330,8 +326,8 @@ hide_breadcrumbs: true
           color: {
             type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: withAlpha(lineColor, 0.25) },
-              { offset: 1, color: 'rgba(196,22,42,0)' }
+              { offset: 0, color: lineColorSoft },
+              { offset: 1, color: 'rgba(255,152,48,0)' }
             ]
           }
         },
@@ -582,12 +578,11 @@ hide_breadcrumbs: true
 </script>
 
 <style>
-  .forecast-carousel, .chronicle-carousel, .key-events-track {
+  .chronicle-carousel, .key-events-track {
     cursor: grab;
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
-  .forecast-carousel::-webkit-scrollbar,
   .chronicle-carousel::-webkit-scrollbar,
   .key-events-track::-webkit-scrollbar {
     display: none;
@@ -809,6 +804,7 @@ ORDER BY b.p_posterior_prt DESC
 SELECT forecast_id, published_dttm, p_posterior_prt
 FROM dwh_pg_1.b_forecast_posteriors
 WHERE language_code = 'ru' AND story_id = ${params.story}
+  AND published_dttm >= CURRENT_DATE - INTERVAL '30 days'
 ORDER BY forecast_id, published_dttm
 ```
 
@@ -1098,81 +1094,61 @@ ORDER BY rank_idx
 
 ## Прогноз на {q_forecasts[0].horizon_days} дней
 
-<div class="forecast-carousel not-prose mt-2 mb-10" use:dragScroll
-     style="display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x proximity; padding-bottom:4px; user-select:none; -webkit-user-select:none; isolation:isolate">
-  {#each q_forecasts as f}
+<!-- Ранжированные полосы (вариант C из брейншторма про блок «Прогноз»): одна плашка на
+     все сценарии сразу, отсортированные по вероятности (q_forecasts уже ORDER BY
+     p_posterior_prt DESC) — сравнение мгновенное, без свайпа карточек. Причина и график
+     истории (как раньше под двумя иконками) теперь под одним тапом "Подробнее". -->
+<div class="not-prose mt-2 mb-10">
+  {#each q_forecasts as f, i}
     {@const delta = formatDelta(f.delta_pp)}
-    <div class="rounded-xl border relative cursor-pointer"
-         style="flex:0 0 78%; max-width:280px; scroll-snap-align:start; background:#faf9f7; border-color:#e7e5e4; overflow:clip;"
-         use:tappable
-         on:tap={() => {
-           if (slidForecastId === f.forecast_id) {
-             slidForecastId = null;
-           } else {
-             slidForecastId = f.forecast_id; openInfoId = null; openChartId = null;
-           }
-         }}>
-
-      <!-- Скользящее содержимое -->
-      <div class="px-4 py-3"
-           style="transform:translateX({slidForecastId === f.forecast_id ? '-56px' : '0'}); transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)">
-
-        <p class="text-sm font-medium leading-snug mb-3" style="color:#15140F; min-height:2.6em">{f.forecast_nm}</p>
-
-        <div class="flex items-center mb-3">
-          <p class="text-3xl font-semibold tabular-nums" style="color:#15140F">{f.pct}%</p>
-        </div>
-
-        {#if openInfoId === f.forecast_id}
-          <div class="mb-2 px-3 py-2 rounded-lg text-xs leading-relaxed text-stone-600" style="background-color:#f5f4f2; border:1px solid #e7e5e4">
-            {f.forecast_txt}
-          </div>
-        {/if}
-
-        {#if openChartId === f.forecast_id}
-          {@const history = q_forecasts_history.filter(r => r.forecast_id === f.forecast_id)}
-          {#if history.length > 1}
-            <div style="width:100%; height:90px; margin-bottom:0.5rem">
-              <ECharts config={forecastChart(history, f.pct)} height="90px" />
-            </div>
-          {/if}
-        {/if}
-
-        <div class="h-1.5 w-full rounded-full overflow-hidden mb-1.5" style="background-color:#e7e5e4">
-          <div class="h-full rounded-full" style="background:linear-gradient(to right, #C4162A, {barTopColor(f.pct / 100)}); width:{f.pct}%"></div>
-        </div>
-        <p class="text-xs">
+    {@const isOpen = openInfoId === f.forecast_id}
+    {@const labelOutside = f.pct < 22}
+    {@const history = q_forecasts_history.filter(r => r.forecast_id === f.forecast_id)}
+    <div style="{i > 0 ? 'margin-top:18px' : ''}">
+      <div class="flex items-baseline justify-between gap-2 mb-1.5">
+        <p class="text-xs font-medium leading-snug" style="color:#57534e">{f.forecast_nm}</p>
+        <p class="text-xs flex-shrink-0">
           {#if delta.arrow}<span style="color:{delta.arrowColor}">{delta.arrow}</span>{/if}
           <span style="color:{delta.textColor}"> {delta.text}</span>
         </p>
       </div>
 
-      <!-- Зона иконок — скользит из правого края -->
-      <div class="absolute top-0 bottom-0 right-0 flex flex-col items-center justify-center gap-2"
-           style="width:56px; transform:translateX({slidForecastId === f.forecast_id ? '0' : '100%'}); transition:transform 0.25s cubic-bezier(0.4,0,0.2,1)">
-
-        <button type="button"
-          use:tappable
-          on:tap|stopPropagation={() => { openInfoId = openInfoId === f.forecast_id ? null : f.forecast_id; if (openInfoId) openChartId = null; slidForecastId = null; }}
-          class="flex items-center justify-center rounded-full"
-          style="width:36px; height:36px; border:1px solid #e7e5e4; background:#fafaf9; cursor:pointer; flex-shrink:0; color:{openInfoId === f.forecast_id ? '#57534e' : '#78716c'}">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
-            <circle cx="9" cy="4" r="1"/>
-            <rect x="8" y="7" width="2" height="8.5" rx="1"/>
-          </svg>
-        </button>
-
-        <button type="button"
-          use:tappable
-          on:tap|stopPropagation={() => { openChartId = openChartId === f.forecast_id ? null : f.forecast_id; if (openChartId) openInfoId = null; slidForecastId = null; }}
-          class="flex items-center justify-center rounded-full"
-          style="width:36px; height:36px; border:1px solid #e7e5e4; background:#fafaf9; cursor:pointer; flex-shrink:0; color:{openChartId === f.forecast_id ? '#57534e' : '#78716c'}">
-          <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
-          </svg>
-        </button>
-
+      <div class="relative rounded-lg overflow-hidden" style="height:32px; background:#f5f4f2">
+        <div class="absolute inset-y-0 left-0 rounded-lg" style="width:{f.pct}%; background:linear-gradient(to right, #C4162A, {barTopColor(f.pct / 100)})"></div>
+        <!-- Подпись всегда якорится на край закрашенной части (pct%), а не трека —
+             иначе на среднем заполнении (напр. 57%) "внутри" на деле попадало бы на
+             незакрашенный серый хвост. Внутри — вплотную к правому краю заливки,
+             белым; если заливка слишком узкая для текста — сразу за её краем, чёрным. -->
+        <span class="absolute top-1/2 text-sm font-semibold tabular-nums"
+              style="left:{f.pct}%; transform:translate({labelOutside ? '10px' : 'calc(-100% - 10px)'}, -50%); color:{labelOutside ? '#15140F' : '#faf9f7'}">{f.pct}%</span>
       </div>
+
+      {#if f.forecast_txt || history.length > 1}
+        <button type="button"
+          class="mt-1.5 inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none"
+          style="color:#a8a29e; background:none; border:none; padding:0"
+          use:tappable on:tap={() => { openInfoId = isOpen ? null : f.forecast_id; }}>
+          {isOpen ? 'Скрыть' : 'Подробнее'}
+          <span style="display:inline-flex; transform:rotate({isOpen ? '180deg' : '0deg'}); transition:transform 0.2s">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </button>
+
+        {#if isOpen}
+          <div in:slide={{ duration: 220 }} out:slide={{ duration: 160 }}>
+            {#if f.forecast_txt}
+              <p class="text-xs leading-relaxed mt-2" style="color:#57534e">{f.forecast_txt}</p>
+            {/if}
+            {#if history.length > 1}
+              <div style="width:100%; height:90px; margin-top:0.5rem">
+                <ECharts config={forecastChart(history)} height="90px" />
+              </div>
+            {/if}
+          </div>
+        {/if}
+      {/if}
     </div>
   {/each}
 </div>
