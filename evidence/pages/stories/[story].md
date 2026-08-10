@@ -678,6 +678,7 @@ hide_breadcrumbs: true
     object-fit: cover;
     display: block;
     border: 2px solid transparent;
+    -webkit-user-drag: none;
     transition: opacity 0.25s ease, filter 0.25s ease, border-color 0.25s ease;
   }
   .actor-item.is-active .actor-avatar {
@@ -964,7 +965,7 @@ ORDER BY rank_idx
         use:tappable on:tap={() => { selectedActor === i ? goto(`/stories/${params.story}/actors/${a.actor_id}`) : (selectedActor = i); }}
         on:click|stopPropagation>
         {#if mediaUrl(a.photo_link) && !actorImgError[a.actor_id]}
-          <img class="actor-avatar" src={mediaUrl(a.photo_link)} alt="" loading="lazy"
+          <img class="actor-avatar" src={mediaUrl(a.photo_link)} alt="" loading="lazy" draggable="false"
                on:error={() => { actorImgError[a.actor_id] = true; actorImgError = actorImgError; }}
                on:load={(e) => { if (e.target.naturalWidth < 80) { actorImgError[a.actor_id] = true; actorImgError = actorImgError; } }} />
         {:else}
@@ -1040,11 +1041,11 @@ ORDER BY rank_idx
             {#if dayImages[entry.iso_dt] && !imgError[entry.iso_dt]}
               <div class="-mx-4 -mt-3 mb-3">
                 <div style="aspect-ratio:16/9; background:#f5f4f2">
-                  <img src={absUrl(dayImages[entry.iso_dt])} alt="" loading="lazy"
+                  <img src={absUrl(dayImages[entry.iso_dt])} alt="" loading="lazy" draggable="false"
                        on:error={() => { imgError[entry.iso_dt] = true; imgError = imgError; }}
                        on:load={(e) => { if (e.target.naturalWidth < 300) { imgError[entry.iso_dt] = true; imgError = imgError; } }}
                        class="w-full h-full object-cover"
-                       style="filter:grayscale({slideGrayscale[i] ?? 1}); transition:filter 0.3s ease" />
+                       style="filter:grayscale({slideGrayscale[i] ?? 1}); transition:filter 0.3s ease; -webkit-user-drag:none" />
                 </div>
               </div>
             {:else if q_story[0] && Number.isFinite(+q_story[0].geo_lat)}

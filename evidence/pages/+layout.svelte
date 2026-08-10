@@ -410,6 +410,12 @@
     --z-desktop-gate: 999;  /* десктопная заглушка — выше вообще всего на сайте */
   }
   :global(header) { display: none !important; }
+  /* Штатные левый/правый сайдбары Evidence (Home/Stories-навигация, "On this page" TOC) --
+     у них свои брейкпоинты (md=768px / lg=1024px), не совпадающие с нашей десктопной
+     заглушкой (900px), из-за чего в зазоре 768-899px они всё же проступали поверх
+     мобильного дизайна. Прячем безусловно -- у сайта своя навигация (остров/боковое
+     меню ниже); :not(.c-sidebar) исключает наш собственный <aside>. */
+  :global(aside):not(.c-sidebar) { display: none !important; }
   :global(html), :global(body) {
     /* !important -- Evidence сам вешает на <body> класс с фоном из
        theme.colors.base.light (evidence.config.yaml, сейчас #ffffff), у которого
