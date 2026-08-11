@@ -106,6 +106,12 @@ hide_breadcrumbs: true
 
   $: actorRow = q_actor?.[0];
 
+  // отдельная витрина цитат, вне фильтров ленты публикаций (страна/источник) --
+  // это самостоятельный раздел, а не производная от отфильтрованной ленты
+  $: quotes = q_news_feed
+    .filter(i => i.quote_txt)
+    .map((item, idx) => ({ ...item, uid: idx }));
+
   $: countries = [...new Set(q_news_feed.filter(i => i.country_code).map(i => i.country_code))].sort();
   $: feeds = [...new Set(q_news_feed.map(i => i.feed_nm))].sort();
 
@@ -286,6 +292,7 @@ SELECT
     , title_txt
     , summary_txt
     , image_url
+    , quote_txt
 FROM dwh_pg_1.b_story_news_actors
 WHERE story_id = ${params.story}
   AND actor_id = '${params.actor}'
@@ -345,6 +352,24 @@ ORDER BY published_dttm DESC
     {/if}
   </div>
 </div>
+
+{#if quotes.length > 0}
+## Цитаты
+
+<div class="not-prose flex flex-col gap-3 mb-6">
+  {#each quotes as q (q.uid)}
+    <div class="rounded-xl border px-4 py-3" style="background:#faf9f7; border-color:#e7e5e4">
+      <p class="text-sm leading-relaxed" style="color:#15140F">«{q.quote_txt}»</p>
+      <p class="text-xs mt-2 flex items-center gap-1 flex-wrap" style="color:#a8a29e">
+        {fmtDate(q.published_dttm)}&nbsp;·&nbsp;{q.feed_nm}
+        {#if q.news_link}
+          &nbsp;·&nbsp;<a href={absUrl(q.news_link)} target="_blank" rel="noopener" class="font-medium" style="color:#C0401C">Источник →</a>
+        {/if}
+      </p>
+    </div>
+  {/each}
+</div>
+{/if}
 
 ## Публикации
 
