@@ -65,9 +65,15 @@
   // блоке ниже (после объявления parentUrl), чтобы показывать/прятать нативную кнопку "назад".
   let tgWebApp = null;
 
-  // Мобильный встроенный браузер Telegram рисует свою панель (Закрыть/⋯) поверх страницы,
-  // её высоту не отдаёт ни один safe-area API для обычных (не мини-апп) ссылок — добавляем
-  // фиксированный отступ вручную, только когда точно определили, что мы внутри Telegram.
+  // Мобильный встроенный браузер Telegram рисует свою панель (Закрыть/⋯) поверх страницы —
+  // её высоту не отдаёт ни один safe-area API, добавляем фиксированный отступ вручную.
+  // Но это верно только для fullscreen-режима мини-аппа (панель — оверлей поверх вебвью).
+  // В обычном (не fullscreen) режиме тот же нативный хедер вместо этого сдвигает вебвью
+  // вниз — он уже не пересекается со страницей, и наш отступ поверх него даёт лишнюю
+  // белую полосу. Определить режим можно только после загрузки telegram-web-app.js
+  // (tg.isFullscreen), поэтому до этого момента подстраховываемся в пользу старого
+  // поведения — так оно исторически работало для обычных (не мини-апп) ссылок в
+  // Telegram, где isFullscreen никак не отличить от отсутствия панели вообще.
   onMount(() => {
     const ua = navigator.userAgent || '';
     const isMobile = /Android|iPhone|iPad/i.test(ua);
@@ -92,6 +98,13 @@
           // поэтому вместо своего edge-свайпа используем нативную кнопку "назад".
           tg.BackButton?.onClick(() => { if (parentUrl) goto(parentUrl); });
           tgWebApp = tg;
+
+          // Синхронизируем компенсацию отступа с реальным режимом (см. комментарий выше).
+          const syncFullscreenPadding = () => {
+            document.documentElement.classList.toggle('tg-inapp', tg.isFullscreen !== false);
+          };
+          syncFullscreenPadding();
+          tg.onEvent?.('fullscreenChanged', syncFullscreenPadding);
         } catch (e) {}
       };
       document.head.appendChild(script);
@@ -410,6 +423,25 @@
     --z-desktop-gate: 999;  /* десктопная заглушка — выше вообще всего на сайте */
   }
   :global(header) { display: none !important; }
+  /* Evidence сам рендерит <main class="... flex-grow overflow-x-hidden">; разметку мы
+     не контролируем, только переопределяем через :global().
+     Зачем это правило (не удалять как «пустое»):
+       1. overflow-x:hidden на <main> обрезал full-bleed блоки (margin: 0 -12px) ровно
+          по своей коробке, вдвинутой на 12px правилом .antialiased > div ниже — блок
+          не доезжал до истинного края экрана (белая полоска по краям цветных секций).
+       2. Просто убрать overflow-x нельзя: <main> — flex-item, у него min-width:auto,
+          и он отказывается сжиматься меньше min-content своего содержимого; именно
+          overflow-x:hidden молча держал его в размере. Без него широкий трек
+          .key-events-track (width:{trackW}px) растягивал <main>: scrollWidth
+          591 -> 3778 + горизонтальный скролл (проверено вживую на dev).
+       3. min-width:0 снимает это ограничение flex-item — <main> снова ровно по
+          вьюпорту (scrollWidth == clientWidth), а overflow-x:visible пропускает
+          full-bleed наружу.
+     !important нужен: Tailwind-класс .overflow-x-hidden специфичнее type-селектора. */
+  :global(main) {
+    min-width: 0 !important;
+    overflow-x: visible !important;
+  }
   /* Штатные левый/правый сайдбары Evidence (Home/Stories-навигация, "On this page" TOC) --
      у них свои брейкпоинты (md=768px / lg=1024px), не совпадающие с нашей десктопной
      заглушкой (900px), из-за чего в зазоре 768-899px они всё же проступали поверх

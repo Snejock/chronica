@@ -952,9 +952,15 @@ ORDER BY rank_idx
 {/if}
 
 {#if q_actors.length >= 3}
-## Действующие лица
-
-<div class="not-prose mt-2 mb-8" style="position:relative; isolation:isolate; z-index:var(--z-content-raised)">
+<!-- Заголовок не markdown-«##» — он должен быть внутри full-bleed плашки (бренд-цвет
+     потом, пока нейтральный фон страницы). Инлайн-стили повторяют вычисленный стиль
+     настоящего h2 сайта (20px/600/28px). margin:-12px гасит гутер .antialiased > div;
+     до истинного края доезжает благодаря min-width:0 на <main> (+layout.svelte). -->
+<div class="not-prose mt-2 mb-8"
+     style="position:relative; isolation:isolate; z-index:var(--z-content-raised);
+            margin-left:-12px; margin-right:-12px;
+            background:#faf9f7; padding:14px 0 10px">
+  <h2 style="margin:0 0 8px; padding:0 12px; font-size:20px; font-weight:600; line-height:28px; color:#15140F">Действующие лица</h2>
   <div class="actors-rail {selectedActor !== null ? 'has-selection' : ''}" use:dragScroll>
     {#each q_actors as a, i}
       <button type="button" class="actor-item {selectedActor === i ? 'is-active' : ''}"
