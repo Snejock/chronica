@@ -9,6 +9,7 @@ SELECT
     , b.country_code
     , b.city_nm
     , b.image_url
+    , b.quote_txt
     , s.title_txt
     , s.summary_txt
 FROM bds.b_story_news_actors b

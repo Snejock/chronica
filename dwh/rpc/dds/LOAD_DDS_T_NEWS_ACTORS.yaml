@@ -51,11 +51,16 @@ pipeline:
               stated or implied in the article, used later to disambiguate them from others with the same name
               (e.g. "Russian president", "Iranian foreign minister", "local resident quoted in the story")
             - confidence_prt (float, 0.00-1.00) — how confident you are this is a real, distinctly named individual
+            - quote_txt (string or null) — the single most representative direct quote attributed to this person
+              in the article, in their own words (translate to English if the article quotes them in another
+              language). Use null if the article does not report this person's own words, only paraphrases or
+              describes their actions without quoting them.
 
             Rules:
             - Only include real, named individuals — no anonymous references ("a spokesperson", "residents"),
               no organizations, no countries.
             - Do not invent people who are not mentioned in the text.
+            - Do not invent quotes — quote_txt must reflect words the article actually attributes to the person.
             - If no such individuals are mentioned, return {"actors": []}.
 
             Return JSON only, no explanations.
@@ -123,7 +128,8 @@ pipeline:
           "raw_actor_nm": a.actor_nm.or("").string().catch(""),
           "search_nm": a.search_nm.or(a.actor_nm.or("")).string().catch(""),
           "context_txt": a.context_txt.or("").string().catch(""),
-          "confidence_prt": a.confidence_prt.or(null).number().catch(null)
+          "confidence_prt": a.confidence_prt.or(null).number().catch(null),
+          "quote_txt": a.quote_txt.or(null).string().catch(null)
         })
 
     - mapping: |
@@ -461,8 +467,8 @@ output:
           driver: postgres
           dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
           query: |
-            INSERT INTO dds.t_news_actors (news_id, actor_id, model_nm, published_dttm, actor_nm, confidence_prt)
-            SELECT xxh64($1), $2, $3, h.published_dttm, COALESCE(sd.canonical_nm, $4), $5
+            INSERT INTO dds.t_news_actors (news_id, actor_id, model_nm, published_dttm, actor_nm, confidence_prt, quote_txt)
+            SELECT xxh64($1), $2, $3, h.published_dttm, COALESCE(sd.canonical_nm, $4), $5, $6
             FROM dds.h_news h
             LEFT JOIN dds.s_actor_details sd ON sd.actor_id = $2 AND sd.language_code = 'en'
             WHERE h.news_id = xxh64($1)
@@ -473,7 +479,8 @@ output:
               this.actor_id,
               "deepseek-v4-flash:cloud",
               this.raw_actor_nm,
-              this.confidence_prt.catch(null)
+              this.confidence_prt.catch(null),
+              this.quote_txt.catch(null)
             ]
           batching:
             count: 10
