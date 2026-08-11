@@ -19,6 +19,7 @@ SELECT
     , f.city_nm
     , u.language_code
     , m.image_url
+    , tna.quote_txt
 FROM bds.b_unews u
 JOIN dds.t_story_news tsn
     ON tsn.news_id = u.news_id
