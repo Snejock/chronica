@@ -19,7 +19,7 @@ SELECT
     , f.city_nm
     , u.language_code
     , m.image_url
-    , tna.quote_txt
+    , saq.quote_txt
 FROM bds.b_unews u
 JOIN dds.t_story_news tsn
     ON tsn.news_id = u.news_id
@@ -29,5 +29,9 @@ JOIN dds.t_news_actors tna
 JOIN dds.h_news h ON h.news_id = u.news_id
 JOIN dds.d_rss_feeds f ON h.feed_id = f.feed_id
 LEFT JOIN dds.s_news_media m ON m.news_id = u.news_id
+LEFT JOIN dds.s_news_actor_quotes saq
+    ON saq.news_id = u.news_id
+   AND saq.actor_id = tna.actor_id
+   AND saq.language_code = u.language_code
 WHERE u.language_code = 'ru'
 ;
