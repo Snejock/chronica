@@ -135,8 +135,8 @@ pipeline:
           "search_nm": a.search_nm.or(a.actor_nm.or("")).string().catch(""),
           "context_txt": a.context_txt.or("").string().catch(""),
           "confidence_prt": a.confidence_prt.or(null).number().catch(null),
-          "quote_en_txt": a.quote_en_txt.or(null).string().catch(null),
-          "quote_ru_txt": a.quote_ru_txt.or(null).string().catch(null)
+          "quote_en_txt": a.quote_en_txt.or(null),
+          "quote_ru_txt": a.quote_ru_txt.or(null)
         })
 
     - mapping: |
