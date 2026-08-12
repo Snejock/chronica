@@ -123,7 +123,10 @@ hide_breadcrumbs: true
 
   // Горизонтальный таймлайн ключевых событий: слева старые даты, справа новые
   // (q_key_events отсортирован ASC по dt, так что последний элемент — самый свежий).
-  // 4 уровня высоты, равномерный шаг. Трек: height=280px, center=140px, dot=11px
+  // Без зигзага: все подписи события — в один ряд НАД осью (растут вверх от
+  // фиксированного отступа над точкой), дата — под точкой, как и раньше
+  // (см. ревью блока «Ключевые события»).
+  // Трек: height=200px, rail=150px от верха, dot=11px.
   const KE_SIDE_PAD    = 100;
   const KE_GAP         = 165;
   $: keyEventLayout = (() => {
@@ -131,7 +134,7 @@ hide_breadcrumbs: true
     const trackW = Math.max(400, (q_key_events.length - 1) * KE_GAP + KE_SIDE_PAD * 2);
     const lastIdx = q_key_events.length - 1;
     const items  = q_key_events.map((ev, i) => ({
-      ...ev, id: i, x: KE_SIDE_PAD + i * KE_GAP, above: i % 2 === 0, fresh: i === lastIdx,
+      ...ev, id: i, x: KE_SIDE_PAD + i * KE_GAP, fresh: i === lastIdx,
     }));
     return { trackW, items };
   })();
@@ -852,7 +855,7 @@ ORDER BY rank_idx
 {/if}
 
 {#if q_story_brief.length > 0}
-<p class="text-sm leading-relaxed" style="color:#57534e; margin-bottom:24px">{q_story_brief[0].brief_txt}</p>
+<p class="text-sm leading-relaxed" style="color:#57534e; margin-bottom:32px">{q_story_brief[0].brief_txt}</p>
 {/if}
 
 ## Ключевые события
@@ -867,7 +870,7 @@ ORDER BY rank_idx
   <!-- Подсказка «левее — прошлое»: закреплена у края обёртки, а не трека,
        поэтому не уезжает при скролле. Только если правда есть куда скроллить. -->
   {#if keyEventLayout.items.length > 1}
-  <div style="position:absolute; top:calc(50% - 34px); left:14px; z-index:5; pointer-events:none">
+  <div style="position:absolute; bottom:56px; left:14px; z-index:5; pointer-events:none">
     <span style="font-size:11px; font-weight:400; letter-spacing:0.04em; color:#C0401C; white-space:nowrap">‹ ранее</span>
   </div>
   {/if}
@@ -880,18 +883,17 @@ ORDER BY rank_idx
   {#key params.story}
   <div class="key-events-track" use:dragScroll use:autoScrollRight
        style="overflow-x:auto; overscroll-behavior-x:contain; padding-bottom:4px">
-    <div style="position:relative; width:{keyEventLayout.trackW}px; height:300px; min-width:100%">
+    <div style="position:relative; width:{keyEventLayout.trackW}px; height:200px; min-width:100%">
 
 
       <!-- Градиентная дорога (ось) -->
-      <div class="ke-rail" style="position:absolute; top:50%; left:0; right:0; transform:translateY(-50%); z-index:1"></div>
+      <div class="ke-rail" style="position:absolute; top:150px; left:0; right:0; transform:translateY(-50%); z-index:1"></div>
 
-      <!-- SVG: постоянные серые leader-линии + красная акцентная при выборе -->
+      <!-- SVG: короткий leader-стежок от точки к тегу — все теги теперь в один
+           ряд над осью (без зигзага верх/низ). -->
       <svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2">
         {#each keyEventLayout.items as ev}
-          {@const y1 = ev.above ? 145 : 155}
-          {@const y2 = ev.above ? 100 : 200}
-          <line x1={ev.x} y1={y1} x2={ev.x} y2={y2} stroke="#e7e5e4" stroke-width="1"/>
+          <line x1={ev.x} y1={145} x2={ev.x} y2={100} stroke="#e7e5e4" stroke-width="1"/>
         {/each}
       </svg>
 
@@ -900,12 +902,12 @@ ORDER BY rank_idx
         {@const _isFresh = ev.fresh}
 
         <!-- Дата под точкой -->
-        <div style="position:absolute; top:calc(50% + 9px); left:{ev.x}px; transform:translateX(-50%); text-align:center; pointer-events:none; z-index:3">
+        <div style="position:absolute; top:159px; left:{ev.x}px; transform:translateX(-50%); text-align:center; pointer-events:none; z-index:3">
           <span style="font-size:11px; font-weight:500; color:{_isOpen ? '#15140F' : '#78716c'}; letter-spacing:0.03em; transition:color 0.2s; white-space:nowrap">{ev.short_dt}</span>
         </div>
 
         <!-- Станция-точка: метро-стиль (белая с кольцом, тенью, гало при выборе) -->
-        <div style="position:absolute; top:50%; left:{ev.x}px; width:11px; height:11px; transform:translate(-50%,-50%); z-index:3; cursor:pointer"
+        <div style="position:absolute; top:150px; left:{ev.x}px; width:11px; height:11px; transform:translate(-50%,-50%); z-index:3; cursor:pointer"
              use:tappable on:tap={() => { openEventId = _isOpen ? null : ev.id; pingRipple(ev.id); }} on:click|stopPropagation>
           {#if rippleEventId === ev.id}
             {#key rippleSeq}
@@ -922,22 +924,15 @@ ORDER BY rank_idx
                       transform:scale({_isOpen ? 1.45 : 1})"></div>
         </div>
 
-        <!-- Тег: выше или ниже оси, рамка появляется при выборе -->
-        {#if ev.above}
-          <div style="position:absolute; left:{ev.x}px; bottom:calc(50% + 50px); width:150px; transform:translateX(-50%); cursor:pointer; z-index:{_isOpen ? 4 : 1}; text-align:center"
-               use:tappable on:tap={() => { _isOpen ? goto(`/stories/${params.story}/${ev.iso_dt}`) : (openEventId = ev.id); }} on:click|stopPropagation>
-            <div style="border-radius:12px; border:1px solid {_isOpen ? '#e7e5e4' : 'transparent'}; padding:5px 8px; background:{_isOpen ? '#faf9f7' : 'transparent'}; transition:border-color 0.2s, background 0.2s">
-              <p class="ke-tag" style="font-size:14px; font-weight:400; color:#57534e; margin:0; line-height:1.35; transition:transform 0.2s">{ev.event_nm}</p>
-            </div>
+        <!-- Тег: всегда над осью, рамка появляется при выборе. bottom-якорь,
+             а не top, — чтобы блок рос вверх от фиксированного отступа над
+             точкой независимо от числа строк текста. -->
+        <div style="position:absolute; left:{ev.x}px; bottom:100px; width:150px; transform:translateX(-50%); cursor:pointer; z-index:{_isOpen ? 4 : 1}; text-align:center"
+             use:tappable on:tap={() => { _isOpen ? goto(`/stories/${params.story}/${ev.iso_dt}`) : (openEventId = ev.id); }} on:click|stopPropagation>
+          <div style="border-radius:12px; border:1px solid {_isOpen ? '#e7e5e4' : 'transparent'}; padding:5px 8px; background:{_isOpen ? '#faf9f7' : 'transparent'}; transition:border-color 0.2s, background 0.2s">
+            <p class="ke-tag" style="font-size:14px; font-weight:400; color:#57534e; margin:0; line-height:1.35; transition:transform 0.2s">{ev.event_nm}</p>
           </div>
-        {:else}
-          <div style="position:absolute; left:{ev.x}px; top:calc(50% + 50px); width:150px; transform:translateX(-50%); cursor:pointer; z-index:{_isOpen ? 4 : 1}; text-align:center"
-               use:tappable on:tap={() => { _isOpen ? goto(`/stories/${params.story}/${ev.iso_dt}`) : (openEventId = ev.id); }} on:click|stopPropagation>
-            <div style="border-radius:12px; border:1px solid {_isOpen ? '#e7e5e4' : 'transparent'}; padding:5px 8px; background:{_isOpen ? '#faf9f7' : 'transparent'}; transition:border-color 0.2s, background 0.2s">
-              <p class="ke-tag" style="font-size:14px; font-weight:400; color:#57534e; margin:0; line-height:1.35; transition:transform 0.2s">{ev.event_nm}</p>
-            </div>
-          </div>
-        {/if}
+        </div>
 
       {/each}
     </div>
@@ -946,7 +941,7 @@ ORDER BY rank_idx
 
 </div>
 {:else}
-<div class="not-prose mt-4 p-5 rounded-xl border" style="background:#faf9f7; border-color:#e7e5e4">
+<div class="not-prose mt-4 mb-8 p-5 rounded-xl border" style="background:#faf9f7; border-color:#e7e5e4">
   <p class="text-sm" style="color:#a8a29e">Ключевые события ещё не определены.</p>
 </div>
 {/if}
@@ -955,11 +950,14 @@ ORDER BY rank_idx
 <!-- Заголовок не markdown-«##» — он должен быть внутри full-bleed плашки (бренд-цвет
      потом, пока нейтральный фон страницы). Инлайн-стили повторяют вычисленный стиль
      настоящего h2 сайта (20px/600/28px). margin:-12px гасит гутер .antialiased > div;
-     до истинного края доезжает благодаря min-width:0 на <main> (+layout.svelte). -->
+     до истинного края доезжает благодаря min-width:0 на <main> (+layout.svelte).
+     padding-top не задаём: отступ сверху даёт только margin-коллапс с mb-8 предыдущего
+     блока (те же 32px, что перед «Ключевыми событиями» и «Хроникой событий») — раньше
+     здесь ещё был padding-top:14px поверх коллапса, и блок начинался заметно ниже. -->
 <div class="not-prose mt-2 mb-8"
      style="position:relative; isolation:isolate; z-index:var(--z-content-raised);
             margin-left:-12px; margin-right:-12px;
-            background:#faf9f7; padding:14px 0 10px">
+            background:#faf9f7; padding:0 0 10px">
   <h2 style="margin:0 0 8px; padding:0 12px; font-size:20px; font-weight:600; line-height:28px; color:#15140F">Действующие лица</h2>
   <div class="actors-rail {selectedActor !== null ? 'has-selection' : ''}" use:dragScroll>
     {#each q_actors as a, i}
