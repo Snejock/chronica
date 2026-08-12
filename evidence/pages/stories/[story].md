@@ -1013,8 +1013,11 @@ ORDER BY rank_idx
 {#if q_stories_summaries.length > 0}
 <!-- margin-left/right отдельно, а не шорткатом "margin: 0 -12px" — тот заодно
      обнулял margin-bottom и гасил mb-8, из-за чего отступ перед «Прогнозом» ниже
-     не коллапсировал до тех же 32px, что у остальных блоков (см. правку выше). -->
-<div class="not-prose mt-4 mb-8" style="margin-left:-12px; margin-right:-12px">
+     не коллапсировал до тех же 32px, что у остальных блоков (см. правку выше).
+     mt-2, а не mt-4: отступ от заголовка до контента у всех остальных блоков (Ключевые
+     события, Действующие лица, Прогноз, Карта событий) — 8px через mt-2; mt-4 здесь был
+     единственным исключением и давал заметно больший зазор до карусели. -->
+<div class="not-prose mt-2 mb-8" style="margin-left:-12px; margin-right:-12px">
   <!-- {#key params.story}: те же use:-экшены (dragScroll/autoScrollRight), что и
        в «Ключевых событиях» выше — без key при переходе между сюжетами по
        клиенту карусель не пересоздаётся и не спрыгивает к свежим карточкам. -->
@@ -1031,8 +1034,10 @@ ORDER BY rank_idx
            use:tappable
            on:tap={() => goto(`/stories/${params.story}/${entry.iso_dt}`)}>
 
-        <!-- Дата -->
-        <div style="padding:10px 0 6px 12px">
+        <!-- Дата. padding-top не задаём: раньше 10px здесь давали в сумме с
+             mt-2-коллапсом заметно больший отступ до заголовка, чем у остальных
+             блоков (8px) — см. правку выше про Хронику событий. -->
+        <div style="padding:0 0 6px 12px">
           <span style="display:inline-block; font-size:11px; font-weight:600; color:#faf9f7; background:#57534e; padding:3px 8px; border-radius:6px; letter-spacing:0.01em; white-space:nowrap">{_day} {_mon}{_year !== new Date().getFullYear() ? ' ' + _year : ''}</span>
         </div>
 
