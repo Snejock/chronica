@@ -1011,7 +1011,10 @@ ORDER BY rank_idx
 ## Хроника событий
 
 {#if q_stories_summaries.length > 0}
-<div class="not-prose mt-4" style="margin:0 -12px">
+<!-- margin-left/right отдельно, а не шорткатом "margin: 0 -12px" — тот заодно
+     обнулял margin-bottom и гасил mb-8, из-за чего отступ перед «Прогнозом» ниже
+     не коллапсировал до тех же 32px, что у остальных блоков (см. правку выше). -->
+<div class="not-prose mt-4 mb-8" style="margin-left:-12px; margin-right:-12px">
   <!-- {#key params.story}: те же use:-экшены (dragScroll/autoScrollRight), что и
        в «Ключевых событиях» выше — без key при переходе между сюжетами по
        клиенту карусель не пересоздаётся и не спрыгивает к свежим карточкам. -->
@@ -1089,7 +1092,7 @@ ORDER BY rank_idx
 
 </div>
 {:else}
-<div class="not-prose mt-4 p-6 bg-amber-50 border border-amber-200 rounded-xl">
+<div class="not-prose mt-4 mb-8 p-6 bg-amber-50 border border-amber-200 rounded-xl">
   <p class="text-amber-800 text-sm">Ежедневные сводки новостей для этого сюжета пока не сформированы.</p>
 </div>
 {/if}
@@ -1102,7 +1105,7 @@ ORDER BY rank_idx
      все сценарии сразу, отсортированные по вероятности (q_forecasts уже ORDER BY
      p_posterior_prt DESC) — сравнение мгновенное, без свайпа карточек. Причина и график
      истории (как раньше под двумя иконками) теперь под одним тапом "Подробнее". -->
-<div class="not-prose mt-2 mb-10">
+<div class="not-prose mt-2 mb-8">
   {#each q_forecasts as f, i}
     {@const delta = formatDelta(f.delta_pp)}
     {@const isOpen = openInfoId === f.forecast_id}
