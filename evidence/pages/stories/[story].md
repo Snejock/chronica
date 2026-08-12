@@ -153,6 +153,11 @@ hide_breadcrumbs: true
   let expanded   = {};
   let fullHeight = {};
 
+  // Цитаты: по умолчанию видно только 3 последних (q_story_quotes уже ORDER BY
+  // published_dttm DESC), остальные — по кнопке «Показать ещё N».
+  let quotesExpanded = false;
+  const QUOTES_COLLAPSED_CNT = 3;
+
   let imgError = {};
   function absUrl(url) {
     if (!url) return url;
@@ -848,6 +853,30 @@ WHERE story_id = ${params.story}
 ORDER BY rank_idx
 ```
 
+<!-- В отличие от q_news_feed на странице актёра (там фильтр по одному actor_id),
+     здесь цитаты сразу нескольких действующих лиц, поэтому подтягиваем canonical_nm/
+     photo_link/description_txt, чтобы подписать, кто говорит и кем является. -->
+```sql q_story_quotes
+SELECT
+    n.actor_id
+    , a.canonical_nm
+    , a.photo_link
+    , a.description_txt
+    , n.published_dttm
+    , n.news_link
+    , n.feed_nm
+    , n.quote_txt
+FROM dwh_pg_1.b_story_news_actors n
+JOIN dwh_pg_1.b_story_actors a
+  ON a.story_id = n.story_id
+  AND a.actor_id = n.actor_id
+  AND a.language_code = 'ru'
+WHERE n.story_id = ${params.story}
+  AND n.quote_txt IS NOT NULL
+  AND n.quote_txt != ''
+ORDER BY n.published_dttm DESC
+```
+
 <div bind:this={pageEl} on:click={() => { if (selectedActor !== null) selectedActor = null; }}>
 
 {#if q_story[0]}
@@ -1005,6 +1034,70 @@ ORDER BY rank_idx
       </div>
     {/if}
   {/key}
+</div>
+{/if}
+
+{#if q_story_quotes.length > 0}
+<!-- Вариант A из ревью «крупное фото»: портрет 52px + имя/должность — шапка карточки,
+     сама цитата НЕ зажата в колонку рядом с фото (иначе под невысоким портретом
+     остаётся пустое место) -- идёт отдельной строкой на всю ширину карточки.
+     Без рамки-бокса, full-bleed (margin -12px гасит padding контейнера, как у
+     «Действующих лиц»/«Хроники событий» выше) -- цитаты разделены волосяной линией,
+     а не обёрнуты каждая в свою карточку.
+     Заголовок — свой <h2> внутри этого же div (а не markdown ##), но того же размера
+     20px/28px и с тем же отступом mt-2, что и у остальных заголовков блоков —
+     единообразно со страницей. -->
+<div class="not-prose mt-2 mb-8" style="margin-left:-12px; margin-right:-12px">
+  <h2 style="margin:0 0 8px; padding:0 12px; font-size:20px; font-weight:600; line-height:28px; color:#15140F">Цитаты</h2>
+  {#each (quotesExpanded ? q_story_quotes : q_story_quotes.slice(0, QUOTES_COLLAPSED_CNT)) as q, i (i)}
+    <div class="px-3 py-3" style="border-top:{i === 0 ? 'none' : '1px solid #e7e5e4'}">
+      <a href="/stories/{params.story}/actors/{q.actor_id}" class="flex items-center gap-3 mb-2.5 w-fit">
+        {#if mediaUrl(q.photo_link) && !actorImgError[q.actor_id]}
+          <!-- flex-shrink:0 обязателен: без него длинное двухстрочное description_txt (как у
+               Зарифа) распирает строку шире доступной ширины, и flexbox сжимает фото по
+               горизонтали (высота у него фиксирована инлайн-стилем и не сжимается вместе с
+               шириной) — аватар выходит овалом вместо круга. -->
+          <img src={mediaUrl(q.photo_link)} alt="" loading="lazy" draggable="false"
+               style="width:52px; height:52px; flex-shrink:0; border-radius:50%; object-fit:cover; display:block; border:1px solid #e7e5e4"
+               on:error={() => { actorImgError[q.actor_id] = true; actorImgError = actorImgError; }} />
+        {:else}
+          <div style="width:52px; height:52px; flex-shrink:0; border-radius:50%; display:flex; align-items:center;
+                       justify-content:center; background:#f0ede8; color:#a8a29e; font-size:16px; font-weight:600;
+                       border:1px solid #e7e5e4">
+            {initials(q.canonical_nm)}
+          </div>
+        {/if}
+        <div class="min-w-0">
+          <p class="text-sm font-bold leading-tight" style="color:#15140F">{q.canonical_nm}</p>
+          {#if q.description_txt}
+            <!-- Обрезаем длинное description_txt по 2 строкам с многоточием (как имя актёра
+                 в аватар-ленте выше), а не даём ему распирать шапку карточки. -->
+            <p class="text-xs mt-0.5" style="color:#a8a29e; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden">{q.description_txt}</p>
+          {/if}
+        </div>
+      </a>
+      <!-- Стандартное веб-выделение цитаты: курсив + акцентная полоса слева (blockquote),
+           вместо ручных «кавычек» — полоса и так читается как маркер цитаты. -->
+      <p class="text-sm leading-relaxed" style="color:#15140F; font-style:italic; border-left:3px solid #C0401C; padding-left:12px">{q.quote_txt}</p>
+      <!-- Ссылку на источник пока убрали по просьбе — вернём в другом виде отдельно. -->
+      <p class="text-xs mt-2" style="color:#a8a29e">{fmtDate(q.published_dttm)}&nbsp;·&nbsp;{q.feed_nm}</p>
+    </div>
+  {/each}
+  {#if q_story_quotes.length > QUOTES_COLLAPSED_CNT}
+    <div class="px-3 py-3" style="border-top:1px solid #e7e5e4">
+      <button type="button"
+        class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none"
+        style="color:#a8a29e; background:none; border:none; padding:0"
+        on:click={() => quotesExpanded = !quotesExpanded}>
+        {quotesExpanded ? 'Свернуть' : `Показать ещё ${q_story_quotes.length - QUOTES_COLLAPSED_CNT}`}
+        <span style="display:inline-flex; transform:rotate({quotesExpanded ? '180deg' : '0deg'}); transition:transform 0.2s">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </button>
+    </div>
+  {/if}
 </div>
 {/if}
 
