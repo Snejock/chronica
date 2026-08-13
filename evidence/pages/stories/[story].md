@@ -154,9 +154,10 @@ hide_breadcrumbs: true
   let fullHeight = {};
 
   // Цитаты: по умолчанию видно только 3 последних (q_story_quotes уже ORDER BY
-  // published_dttm DESC), остальные — по кнопке «Показать ещё N».
-  let quotesExpanded = false;
-  const QUOTES_COLLAPSED_CNT = 3;
+  // published_dttm DESC), кнопка «Показать ещё N» подгружает следующие 3, а не
+  // раскрывает сразу все.
+  const QUOTES_PAGE_CNT = 3;
+  let quotesVisibleCnt = QUOTES_PAGE_CNT;
 
   let imgError = {};
   function absUrl(url) {
@@ -1049,7 +1050,7 @@ ORDER BY n.published_dttm DESC
      единообразно со страницей. -->
 <div class="not-prose mt-2 mb-8" style="margin-left:-12px; margin-right:-12px">
   <h2 style="margin:0 0 8px; padding:0 12px; font-size:20px; font-weight:600; line-height:28px; color:#15140F">Цитаты</h2>
-  {#each (quotesExpanded ? q_story_quotes : q_story_quotes.slice(0, QUOTES_COLLAPSED_CNT)) as q, i (i)}
+  {#each q_story_quotes.slice(0, quotesVisibleCnt) as q, i (i)}
     <div class="px-3 py-3" style="border-top:{i === 0 ? 'none' : '1px solid #e7e5e4'}">
       <a href="/stories/{params.story}/actors/{q.actor_id}" class="flex items-center gap-3 mb-2.5 w-fit">
         {#if mediaUrl(q.photo_link) && !actorImgError[q.actor_id]}
@@ -1083,14 +1084,16 @@ ORDER BY n.published_dttm DESC
       <p class="text-xs mt-2" style="color:#a8a29e">{fmtDate(q.published_dttm)}&nbsp;·&nbsp;{q.feed_nm}</p>
     </div>
   {/each}
-  {#if q_story_quotes.length > QUOTES_COLLAPSED_CNT}
+  {#if quotesVisibleCnt < q_story_quotes.length}
+    <!-- Подгрузка по QUOTES_PAGE_CNT (3), а не раскрытие всех сразу: каждый клик
+         увеличивает quotesVisibleCnt, кнопка сама исчезает, когда показаны все. -->
     <div class="px-3 py-3" style="border-top:1px solid #e7e5e4">
       <button type="button"
         class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none"
         style="color:#a8a29e; background:none; border:none; padding:0"
-        on:click={() => quotesExpanded = !quotesExpanded}>
-        {quotesExpanded ? 'Свернуть' : `Показать ещё ${q_story_quotes.length - QUOTES_COLLAPSED_CNT}`}
-        <span style="display:inline-flex; transform:rotate({quotesExpanded ? '180deg' : '0deg'}); transition:transform 0.2s">
+        on:click={() => quotesVisibleCnt = Math.min(quotesVisibleCnt + QUOTES_PAGE_CNT, q_story_quotes.length)}>
+        Показать ещё {Math.min(QUOTES_PAGE_CNT, q_story_quotes.length - quotesVisibleCnt)}
+        <span style="display:inline-flex">
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
             <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
