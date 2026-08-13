@@ -153,11 +153,12 @@ hide_breadcrumbs: true
   let expanded   = {};
   let fullHeight = {};
 
-  // Цитаты: по умолчанию видно только 3 последних (q_story_quotes уже ORDER BY
-  // published_dttm DESC), кнопка «Показать ещё N» подгружает следующие 3, а не
+  // Цитаты: по умолчанию видна только 1 последняя (q_story_quotes уже ORDER BY
+  // published_dttm DESC), кнопка «Показать ещё N» дальше подгружает по 3, а не
   // раскрывает сразу все.
-  const QUOTES_PAGE_CNT = 3;
-  let quotesVisibleCnt = QUOTES_PAGE_CNT;
+  const QUOTES_INITIAL_CNT = 1;
+  const QUOTES_PAGE_CNT    = 3;
+  let quotesVisibleCnt = QUOTES_INITIAL_CNT;
 
   let imgError = {};
   function absUrl(url) {
@@ -1084,21 +1085,40 @@ ORDER BY n.published_dttm DESC
       <p class="text-xs mt-2" style="color:#a8a29e">{fmtDate(q.published_dttm)}&nbsp;·&nbsp;{q.feed_nm}</p>
     </div>
   {/each}
-  {#if quotesVisibleCnt < q_story_quotes.length}
+  {#if quotesVisibleCnt < q_story_quotes.length || quotesVisibleCnt > QUOTES_INITIAL_CNT}
     <!-- Подгрузка по QUOTES_PAGE_CNT (3), а не раскрытие всех сразу: каждый клик
-         увеличивает quotesVisibleCnt, кнопка сама исчезает, когда показаны все. -->
-    <div class="px-3 py-3" style="border-top:1px solid #e7e5e4">
-      <button type="button"
-        class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none"
-        style="color:#a8a29e; background:none; border:none; padding:0"
-        on:click={() => quotesVisibleCnt = Math.min(quotesVisibleCnt + QUOTES_PAGE_CNT, q_story_quotes.length)}>
-        Показать ещё {Math.min(QUOTES_PAGE_CNT, q_story_quotes.length - quotesVisibleCnt)}
-        <span style="display:inline-flex">
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-            <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </span>
-      </button>
+         увеличивает quotesVisibleCnt, кнопка сама исчезает, когда показаны все.
+         «Скрыть» — сворачивает обратно к QUOTES_INITIAL_CNT (1); появляется, только
+         когда сейчас видно больше одной цитаты, независимо от того, есть ли ещё что
+         подгружать. Без border-top: линии-разделители — только между самими цитатами
+         (см. i === 0 выше), у последней цитаты перед этой строкой линии быть не должно. -->
+    <div class="px-3 py-3 flex items-center gap-4">
+      {#if quotesVisibleCnt < q_story_quotes.length}
+        <button type="button"
+          class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none"
+          style="color:#a8a29e; background:none; border:none; padding:0"
+          on:click={() => quotesVisibleCnt = Math.min(quotesVisibleCnt + QUOTES_PAGE_CNT, q_story_quotes.length)}>
+          Показать ещё {Math.min(QUOTES_PAGE_CNT, q_story_quotes.length - quotesVisibleCnt)}
+          <span style="display:inline-flex">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </button>
+      {/if}
+      {#if quotesVisibleCnt > QUOTES_INITIAL_CNT}
+        <button type="button"
+          class="inline-flex items-center gap-1 text-xs font-medium cursor-pointer select-none"
+          style="color:#a8a29e; background:none; border:none; padding:0"
+          on:click={() => quotesVisibleCnt = QUOTES_INITIAL_CNT}>
+          Скрыть
+          <span style="display:inline-flex; transform:rotate(180deg)">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <polyline points="2,5 7,10 12,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
