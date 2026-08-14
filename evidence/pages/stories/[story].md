@@ -615,6 +615,13 @@ hide_breadcrumbs: true
     to { transform: rotate(360deg); }
   }
 
+  /* Leaflet сам красит .leaflet-container в серый (#ddd, дефолт leaflet.css) — этот
+     фон просвечивает по краям карты и во время подгрузки тайлов, поверх нашего
+     собственного белого фона на обёртке. Перекрываем его белым. */
+  :global(.leaflet-container) {
+    background: #ffffff;
+  }
+
   /* --- Key events: metro-карта --- */
   .ke-rail {
     height: 3px;
@@ -1045,15 +1052,16 @@ ORDER BY n.published_dttm DESC
      сама цитата НЕ зажата в колонку рядом с фото (иначе под невысоким портретом
      остаётся пустое место) -- идёт отдельной строкой на всю ширину карточки.
      Без рамки-бокса, full-bleed (margin -12px гасит padding контейнера, как у
-     «Действующих лиц»/«Хроники событий» выше) -- цитаты разделены волосяной линией,
-     а не обёрнуты каждая в свою карточку.
+     «Действующих лиц»/«Хроники событий» выше) -- цитаты разделены отступом (py-3 на
+     каждой), без волосяной линии: серый фон под текстом цитаты уже сам читается как
+     граница карточки, дополнительная линия-разделитель была бы избыточной.
      Заголовок — свой <h2> внутри этого же div (а не markdown ##), но того же размера
      20px/28px и с тем же отступом mt-2, что и у остальных заголовков блоков —
      единообразно со страницей. -->
 <div class="not-prose mt-2 mb-8" style="margin-left:-12px; margin-right:-12px">
   <h2 style="margin:0 0 8px; padding:0 12px; font-size:20px; font-weight:600; line-height:28px; color:#15140F">Цитаты</h2>
   {#each q_story_quotes.slice(0, quotesVisibleCnt) as q, i (i)}
-    <div class="px-3 py-3" style="border-top:{i === 0 ? 'none' : '1px solid #e7e5e4'}">
+    <div class="px-3 py-3">
       <a href="/stories/{params.story}/actors/{q.actor_id}" class="flex items-center gap-3 mb-2.5 w-fit">
         {#if mediaUrl(q.photo_link) && !actorImgError[q.actor_id]}
           <!-- flex-shrink:0 обязателен: без него длинное двухстрочное description_txt (как у
@@ -1079,9 +1087,21 @@ ORDER BY n.published_dttm DESC
           {/if}
         </div>
       </a>
-      <!-- Стандартное веб-выделение цитаты: курсив + акцентная полоса слева (blockquote),
-           вместо ручных «кавычек» — полоса и так читается как маркер цитаты. -->
-      <p class="text-sm leading-relaxed" style="color:#15140F; font-style:italic; border-left:3px solid #C0401C; padding-left:12px">{q.quote_txt}</p>
+      <!-- Стандартное веб-выделение цитаты: курсив + акцентная полоса слева (blockquote) +
+           светло-серый фон, ограниченный ровно текстом цитаты (не всей карточкой с
+           аватаром/датой) + декоративная оранжевая кавычка в правом верхнем углу этого
+           же фона (тот же акцентный цвет #C0401C, что у полосы слева).
+           Фон — градиент слева направо (0% → 100% прозрачности), а не сплошная заливка:
+           эффект «исчезающего» фона вместо жёсткой правой границы, поэтому справа
+           скругление не нужно (там и так нет видимого края). #f5eee3 — тёплый бежевый,
+           а не нейтральный #f0ede8: фон страницы (body) уже #faf9f7 (тоже тёплый), и
+           нейтрально-серый оттенок на нём выглядел холодным пятном. -->
+      <div class="relative" style="background:linear-gradient(to right, #f5eee3 0%, transparent 100%); padding:10px 30px 10px 12px; border-left:3px solid #C0401C">
+        <span aria-hidden="true"
+          style="position:absolute; top:-4px; right:10px; font-family:Georgia,serif; font-size:34px;
+                 line-height:1; color:#C0401C; pointer-events:none; user-select:none">&rdquo;</span>
+        <p class="text-sm leading-relaxed" style="color:#15140F; font-style:italic">{q.quote_txt}</p>
+      </div>
       <!-- Ссылку на источник пока убрали по просьбе — вернём в другом виде отдельно. -->
       <p class="text-xs mt-2" style="color:#a8a29e">{fmtDate(q.published_dttm)}&nbsp;·&nbsp;{q.feed_nm}</p>
     </div>
@@ -1158,9 +1178,11 @@ ORDER BY n.published_dttm DESC
           <span style="display:inline-block; font-size:11px; font-weight:600; color:#faf9f7; background:#57534e; padding:3px 8px; border-radius:6px; letter-spacing:0.01em; white-space:nowrap">{_day} {_mon}{_year !== new Date().getFullYear() ? ' ' + _year : ''}</span>
         </div>
 
-        <!-- Карточка -->
+        <!-- Карточка. Фон — белый (#ffffff), как у хедера (.c-header в +layout.svelte),
+             а не тёплый #faf9f7 фона страницы — по просьбе сделать блок под фото таким
+             же светлым/белым, как хедер. -->
         <div class="rounded-xl border overflow-hidden"
-             style="background:#faf9f7; border-color:#e7e5e4; margin:0 12px 12px 12px">
+             style="background:#ffffff; border-color:#e7e5e4; margin:0 12px 12px 12px">
           <div class="px-4 py-3">
 
             {#if dayImages[entry.iso_dt] && !imgError[entry.iso_dt]}
@@ -1292,7 +1314,9 @@ ORDER BY n.published_dttm DESC
 </div>
 {/if}
 
-<div class="not-prose mt-2 mb-10 rounded-xl border overflow-hidden" style="background:#faf9f7; border-color:#e7e5e4">
+<!-- Фон белый (#ffffff), как у хедера и карточек «Хроники событий» выше, а не
+     тёплый #faf9f7 фона страницы. -->
+<div class="not-prose mt-2 mb-10 rounded-xl border overflow-hidden" style="background:#ffffff; border-color:#e7e5e4">
   <button type="button"
     class="w-full flex items-center justify-between px-4 py-3 cursor-pointer select-none"
     style="background:none; border:none"

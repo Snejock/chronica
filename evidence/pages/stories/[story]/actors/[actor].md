@@ -356,16 +356,23 @@ ORDER BY published_dttm DESC
 {#if quotes.length > 0}
 ## Цитаты
 
-<div class="not-prose flex flex-col gap-3 mb-6">
+<!-- Оформление цитаты приведено к единому виду со страницей сюжета (см. [story].md):
+     курсив + акцентная полоса слева + светло-серо-тёплый фон-градиент (исчезает
+     к правому краю) + декоративная оранжевая кавычка в правом верхнем углу.
+     Без рамки-карточки вокруг всего блока — тут, в отличие от сюжета, нет
+     аватара/имени актёра над каждой цитатой (сам актёр уже ясен из контекста
+     страницы), так что обособлять цитату в свою карточку незачем. -->
+<div class="not-prose flex flex-col gap-4 mb-6">
   {#each quotes as q (q.uid)}
-    <div class="rounded-xl border px-4 py-3" style="background:#faf9f7; border-color:#e7e5e4">
-      <p class="text-sm leading-relaxed" style="color:#15140F">«{q.quote_txt}»</p>
-      <p class="text-xs mt-2 flex items-center gap-1 flex-wrap" style="color:#a8a29e">
-        {fmtDate(q.published_dttm)}&nbsp;·&nbsp;{q.feed_nm}
-        {#if q.news_link}
-          &nbsp;·&nbsp;<a href={absUrl(q.news_link)} target="_blank" rel="noopener" class="font-medium" style="color:#C0401C">Источник →</a>
-        {/if}
-      </p>
+    <div>
+      <div class="relative" style="background:linear-gradient(to right, #f5eee3 0%, transparent 100%); padding:10px 30px 10px 12px; border-left:3px solid #C0401C">
+        <span aria-hidden="true"
+          style="position:absolute; top:-4px; right:10px; font-family:Georgia,serif; font-size:34px;
+                 line-height:1; color:#C0401C; pointer-events:none; user-select:none">&rdquo;</span>
+        <p class="text-sm leading-relaxed" style="color:#15140F; font-style:italic">{q.quote_txt}</p>
+      </div>
+      <!-- Ссылку на источник убрали — как и на странице сюжета, только дата и фид. -->
+      <p class="text-xs mt-2" style="color:#a8a29e">{fmtDate(q.published_dttm)}&nbsp;·&nbsp;{q.feed_nm}</p>
     </div>
   {/each}
 </div>
@@ -498,9 +505,9 @@ ORDER BY published_dttm DESC
             <!-- Соединительная линия -->
             <div class="absolute pointer-events-none" style="top:20px; left:-8px; width:8px; height:1px; background:#e7e5e4"></div>
 
-            <!-- Карточка -->
+            <!-- Карточка. Фон белый (#ffffff), как у хедера и других карточек-«квадратов» -->
             <div class="rounded-xl border overflow-hidden relative"
-                 style="background:#faf9f7; border-color:#e7e5e4">
+                 style="background:#ffffff; border-color:#e7e5e4">
 
               <!-- Содержимое — уезжает на -100% при открытии -->
               <div class="px-4 py-3"
@@ -574,7 +581,7 @@ ORDER BY published_dttm DESC
               {#if item.news_link}
                 <div class="absolute inset-0 flex items-center justify-center"
                      on:click={() => slidUid = null}
-                     style="transform:translateX({slidUid === item.uid ? '0' : '100%'}); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); background:#faf9f7; cursor:pointer">
+                     style="transform:translateX({slidUid === item.uid ? '0' : '100%'}); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); background:#ffffff; cursor:pointer">
                   <span on:click|stopPropagation={() => slidUid = null}
                         class="inline-flex items-center gap-1"
                         style="position:absolute; top:12px; left:12px; cursor:pointer; color:#a8a29e; font-size:12px; font-weight:500">

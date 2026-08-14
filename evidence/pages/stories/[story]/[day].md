@@ -356,9 +356,9 @@ ORDER BY published_dttm DESC
             <!-- Соединительная линия -->
             <div class="absolute pointer-events-none" style="top:20px; left:-8px; width:8px; height:1px; background:#e7e5e4"></div>
 
-            <!-- Карточка -->
+            <!-- Карточка. Фон белый (#ffffff), как у хедера и других карточек-«квадратов» -->
             <div class="rounded-xl border overflow-hidden relative"
-                 style="background:#faf9f7; border-color:#e7e5e4">
+                 style="background:#ffffff; border-color:#e7e5e4">
 
               <!-- Содержимое — уезжает на -100% при открытии -->
               <div class="px-4 py-3"
@@ -432,7 +432,7 @@ ORDER BY published_dttm DESC
               {#if item.news_link}
                 <div class="absolute inset-0 flex items-center justify-center"
                      on:click={() => slidUid = null}
-                     style="transform:translateX({slidUid === item.uid ? '0' : '100%'}); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); background:#faf9f7; cursor:pointer">
+                     style="transform:translateX({slidUid === item.uid ? '0' : '100%'}); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); background:#ffffff; cursor:pointer">
                   <span on:click|stopPropagation={() => slidUid = null}
                         class="inline-flex items-center gap-1"
                         style="position:absolute; top:12px; left:12px; cursor:pointer; color:#a8a29e; font-size:12px; font-weight:500">

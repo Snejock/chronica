@@ -380,7 +380,7 @@ QUALIFY row_number() OVER (PARTITION BY b.story_id ORDER BY b.p_posterior_prt DE
 {@const slide = activeSlide[story.story_id] || 0}
 <a href="/stories/{story.story_id}"
    class="story-card not-prose block rounded-xl mb-4 border transition-colors overflow-hidden"
-   style="background:#faf9f7"
+   style="background:#ffffff"
    on:click={(e) => {
      if (drag[story.story_id]?.moved) { e.preventDefault(); drag[story.story_id] = {...drag[story.story_id], moved: false}; }
    }}>
