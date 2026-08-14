@@ -3,7 +3,7 @@
   import { onMount, setContext } from 'svelte';
   import { writable } from 'svelte/store';
   import { page } from '$app/stores';
-  import { beforeNavigate, onNavigate, goto } from '$app/navigation';
+  import { afterNavigate, beforeNavigate, onNavigate, goto } from '$app/navigation';
   import { showQueries } from '@evidence-dev/component-utilities/stores';
   import '@evidence-dev/tailwind/fonts.css';
   import '../app.css';
@@ -111,6 +111,33 @@
     }
   });
 
+  // Баг "заголовок опущен, чинится любым touch": видимый (visual) вьюпорт иногда съезжает
+  // относительно layout-вьюпорта, к которому привязан position:fixed — .c-header визуально
+  // "просаживается", хотя его getBoundingClientRect() внутри layout-вьюпорта остаётся
+  // правильным. scrollY тут ни при чём (просто коррелирующий симптом), scrollTo(0,0) не
+  // помогает — offsetTop read-only и со скроллом документа не связан. Чиним известным в
+  // WebKit трюком для похожих залипаний viewport/zoom: дёргаем content у <meta viewport>,
+  // это форсирует пересчёт геометрии вьюпорта на уровне рендер-движка.
+  //
+  // Воспроизводится не только на холодной загрузке, но и посередине сессии на любом
+  // клиентском переходе — а +layout.svelte при переходах между /, /stories и т.п. не
+  // перемонтируется (SvelteKit меняет только контент <slot>), поэтому обычный onMount
+  // сработал бы один раз за сессию и не ловил бы повторные случаи. afterNavigate —
+  // срабатывает на каждом переходе, включая самый первый.
+  afterNavigate(() => {
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    const original = meta.getAttribute('content');
+    const nudge = () => {
+      if (!window.visualViewport || window.visualViewport.offsetTop === 0) return;
+      meta.setAttribute('content', original + ', maximum-scale=1');
+      requestAnimationFrame(() => meta.setAttribute('content', original));
+    };
+    nudge();
+    setTimeout(nudge, 100);
+    setTimeout(nudge, 500);
+  });
+
   const breadcrumbStore = writable(null);
   setContext('breadcrumb', breadcrumbStore);
 
@@ -140,8 +167,34 @@
     }
   });
 
+  // Известный баг именно в Safari: .c-header едет отдельной именованной
+  // view-transition-группой (см. view-transition-name ниже), чтобы не сдвигаться вместе
+  // с остальным контентом — иногда композитор не успевает отрисовать её снимок в первых
+  // кадрах перехода, хедер на мгновение пропадает и появляется заново, а контент чуть
+  // проседает (тот же класс бага с visualViewport/safe-area, что и на холодной загрузке).
+  // В Chrome не воспроизводится. Пробовали чинить и полным отключением анимации на Safari,
+  // и штатным SvelteKit-паттерном ожидания nav.complete перед захватом кадра — второе дало
+  // паузу 1-2с на переходе, ещё хуже исходного бага, причина не выяснена. Не найдя рабочего
+  // фикса, оставляем анимацию как есть — глюк на Safari возможен, это осознанный компромисс.
   onNavigate((nav) => {
     if (!document.startViewTransition) return;
+    // ВАЖНО: это отключает нашу slide-анимацию для ЛЮБОГО popstate на ЛЮБОЙ платформе —
+    // включая обычный клик по кнопке "назад" в десктопном/Android Chrome, а не только
+    // проблемный iOS/WKWebView-кейс ниже. Причина именно в нём: в standalone на iOS свайп
+    // назад идёт через нативный WKWebView-жест allowsBackForwardNavigationGestures (он есть
+    // и у "Add to Home Screen"-приложений, с веб-страницы не отключается). Для записи в
+    // history, реально когда-то загруженной как полная страница (у нас это /stories —
+    // manifest.json start_url), у WKWebView есть собственный кэшированный снимок, и он
+    // рисует по нему live-превью прямо во время свайпа — ещё до того, как здесь вообще
+    // что-то происходит. Если поверх этого запустить ещё и свою startViewTransition(), на
+    // глазах пользователя это выглядит так, будто страница второй раз перезагружается. Для
+    // остальных URL (куда не было полной загрузки) нативного превью нет, но по типу
+    // навигации отличить эти два случая мы не можем — а отличать по платформе (проверять,
+    // что это именно iOS/WKWebView) означало бы городить UA-снифф ради одной анимации.
+    // Проще и надёжнее отдать ЛЮБОЙ popstate целиком нативному "назад/вперёд" — там, где у
+    // браузера нет собственного визуального фидбэка (десктоп, Android без жеста), переход
+    // просто мгновенный, без анимации, а не "неправильный".
+    if (nav.type === 'popstate') return;
     const fromDepth = nav.from?.url.pathname.split('/').filter(Boolean).length ?? 0;
     const toDepth = nav.to?.url.pathname.split('/').filter(Boolean).length ?? 0;
     document.documentElement.dataset.navDir = toDepth < fromDepth ? 'back' : 'forward';
@@ -152,6 +205,24 @@
 
   let menuOpen = false;
   function closeMenu() { menuOpen = false; }
+
+  // Отдельно от closeMenu — для ссылок, которые ещё и уводят на другую страницу.
+  // Обычное закрытие анимированное (transform 0.3s, см. .c-sidebar), а сразу следом
+  // клик по такой ссылке запускает onNavigate → document.startViewTransition(), чей
+  // "старый" снимок захватывается синхронно раньше, чем Svelte успевает применить
+  // menuOpen=false к DOM — снимок утаскивает в себя ещё не закрывшееся меню, и когда
+  // затем настоящий DOM (уже закрытый) проступает под ним, это выглядит как двойной
+  // заезд контента. Закрываем без transition — тогда рассинхронизации не остаётся.
+  function closeMenuForNav() {
+    const sidebar = document.querySelector('.c-sidebar');
+    if (sidebar) {
+      sidebar.style.transition = 'none';
+      menuOpen = false;
+      requestAnimationFrame(() => { sidebar.style.transition = ''; });
+    } else {
+      menuOpen = false;
+    }
+  }
 
   // Список дублирует сид dds.s_story_categories — в боковом меню он зашит статично,
   // т.к. +layout.svelte не страница и не может выполнить sql-запрос к БД.
@@ -178,34 +249,6 @@
     'Магнит (MGNT) — маркетплейс «Магнит Маркет» закрывается с 6 сентября',
   ];
   const tickerLoop = [...TICKER_ITEMS, ...TICKER_ITEMS];
-
-  function swipeBack(node, url) {
-    let currentUrl = url;
-    let active = false, startX = 0, startY = 0;
-    const EDGE = 24, MIN = 60;
-    function down(e) {
-      if (e.pointerType === 'mouse') return;
-      if (e.clientX > EDGE) return;
-      active = true; startX = e.clientX; startY = e.clientY;
-    }
-    function up(e) {
-      if (!active) return;
-      active = false;
-      const dx = e.clientX - startX, dy = e.clientY - startY;
-      if (dx > MIN && Math.abs(dx) > Math.abs(dy) * 1.5 && currentUrl) {
-        goto(currentUrl);
-      }
-    }
-    window.addEventListener('pointerdown', down);
-    window.addEventListener('pointerup', up);
-    return {
-      update(newUrl) { currentUrl = newUrl; },
-      destroy() {
-        window.removeEventListener('pointerdown', down);
-        window.removeEventListener('pointerup', up);
-      }
-    };
-  }
 
   function formatDay(d) {
     if (!d) return '';
@@ -266,13 +309,13 @@
     <img src="/logo.svg" alt="Chronica" class="c-sidebar-logo" />
   </div>
   <nav class="c-sidebar-nav">
-    <a href="/" on:click={closeMenu}>
+    <a href="/" on:click={closeMenuForNav}>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
         <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2L18.7 8.7Q19.5 9.5 19.5 10.7L19.5 18.5Q19.5 21 17 21L7 21Q4.5 21 4.5 18.5L4.5 10.7Q4.5 9.5 5.3 8.7Z M10 21L10 15.6Q10 14.6 11 14.6L13 14.6Q14 14.6 14 15.6L14 21Z" fill="currentColor"/>
       </svg>
       Главная
     </a>
-    <a href="/stories" on:click={closeMenu}>
+    <a href="/stories" on:click={closeMenuForNav}>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
         <mask id="m-stories-sidebar">
           <rect x="4" y="3" width="13" height="17" rx="2.6" fill="white"/>
@@ -288,7 +331,7 @@
       Сюжеты
     </a>
     {#each SIDEBAR_CATEGORIES as cat}
-      <a href="/stories?category={cat.nm}" class="c-sidebar-sub" on:click={closeMenu}>
+      <a href="/stories?category={cat.nm}" class="c-sidebar-sub" on:click={closeMenuForNav}>
         {cat.label}
       </a>
     {/each}
@@ -318,7 +361,7 @@
 </aside>
 
 <!-- Хедер -->
-<div class="c-header" use:swipeBack={parentUrl}>
+<div class="c-header">
   <button class="c-hamburger" on:click={() => menuOpen = true} aria-label="Открыть меню">
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
       <rect x="2" y="4" width="16" height="2" rx="1" fill="#57534e"/>
@@ -412,6 +455,12 @@
      (карты, карусели, таймлайны) обязаны иметь isolation:isolate на обёртке — тогда их
      локальные цифры замкнуты внутри и не могут конкурировать с этой шкалой в принципе. */
   :global(:root) {
+    /* Точка кропа круглых фото актёров (object-position) — единая для аватаров в
+       [story].md (rail, цитаты) и [actor].md (hero); значение подобрано под то, что
+       фото приходят из Wikidata/Commons и лицо обычно в верхней трети кадра, а не по
+       центру. Меняете точку — меняете только здесь, во всех трёх местах подхватится
+       через var(). */
+    --actor-avatar-focus: 50% 20%;
     --z-content-raised: 10; /* элемент обычного контента, которому временно нужно быть
                                 выше окружения (напр. открытая обёртка поповера) */
     --z-scrim: 40;          /* полноэкранный перехватчик кликов "вне попап-меню" */
@@ -455,7 +504,11 @@
        !important body красится в белый и обрывается по высоте контента, а ниже
        на коротких страницах проглядывает бежевый html */
     background-color: #faf9f7 !important;
-    overscroll-behavior-y: none;
+    /* Было none — при диагностике бага с visualViewport.offsetTop (см. afterNavigate
+       выше) заменено на contain заодно с нуджем геометрии вьюпорта; какая из двух
+       правок реально помогла, не разделяли. contain по-прежнему не даёт скроллу
+       "прохудиться" в браузер (pull-to-refresh и т.п.), так что оставлено как есть. */
+    overscroll-behavior-y: contain;
     min-height: 100dvh;
   }
   :global(.antialiased > div) {
@@ -590,8 +643,19 @@
   :global(html.tg-inapp) .c-header-spacer {
     height: calc(env(safe-area-inset-top, 0px) + 44px);
   }
+  /* animation:none на -old/-new глушит только кросс-фейд (прозрачность). Сдвиг/масштаб
+     между старой и новой геометрией элемента браузер анимирует отдельно, на уровне
+     ::view-transition-group(name) — своей автосгенерированной анимацией transform/width/
+     height, которую предыдущее правило не трогает. Если геометрия на снимке чуть
+     отличается между "до" и "после" (see safe-area/visualViewport-баги выше), group
+     доанимирует "доездом" — глушим и его тоже, чтобы хедер и остров не шевелились
+     вообще ни при каких условиях. */
+  :global(::view-transition-group(c-header)),
   :global(::view-transition-old(c-header)),
-  :global(::view-transition-new(c-header)) {
+  :global(::view-transition-new(c-header)),
+  :global(::view-transition-group(c-island)),
+  :global(::view-transition-old(c-island)),
+  :global(::view-transition-new(c-island)) {
     animation: none;
   }
   .c-hamburger {
@@ -659,6 +723,12 @@
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.6);
     box-shadow: 0 8px 32px rgba(21, 20, 15, 0.14), 0 1px 2px rgba(21, 20, 15, 0.06);
+    /* Как и у .c-header выше — своя view-transition-группа. Без неё остров попадает в общий
+       снимок ::view-transition-old/new(root) при каждом переходе: View Transitions снимают
+       элемент плоской растровой картинкой, а backdrop-filter в такой картинке не остаётся
+       живым эффектом (снимать блюр не с чего) — отсюда доля секунды прозрачной подложки без
+       размытия, пока не вернётся настоящий живой DOM-элемент и блюр не досчитается заново. */
+    view-transition-name: c-island;
   }
   .c-island-item {
     flex: 1;

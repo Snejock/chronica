@@ -681,6 +681,7 @@ hide_breadcrumbs: true
     height: 64px;
     border-radius: 50%;
     object-fit: cover;
+    object-position: var(--actor-avatar-focus);
     display: block;
     border: 2px solid transparent;
     -webkit-user-drag: none;
@@ -1060,7 +1061,7 @@ ORDER BY n.published_dttm DESC
                горизонтали (высота у него фиксирована инлайн-стилем и не сжимается вместе с
                шириной) — аватар выходит овалом вместо круга. -->
           <img src={mediaUrl(q.photo_link)} alt="" loading="lazy" draggable="false"
-               style="width:52px; height:52px; flex-shrink:0; border-radius:50%; object-fit:cover; display:block; border:1px solid #e7e5e4"
+               style="width:52px; height:52px; flex-shrink:0; border-radius:50%; object-fit:cover; object-position:var(--actor-avatar-focus); display:block; border:1px solid #e7e5e4"
                on:error={() => { actorImgError[q.actor_id] = true; actorImgError = actorImgError; }} />
         {:else}
           <div style="width:52px; height:52px; flex-shrink:0; border-radius:50%; display:flex; align-items:center;

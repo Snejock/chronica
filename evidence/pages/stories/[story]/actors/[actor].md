@@ -311,7 +311,7 @@ ORDER BY published_dttm DESC
       <img src={mediaUrl(actorRow.photo_link)} alt="" loading="lazy"
            on:error={() => heroImgError = true}
            on:load={(e) => { if (e.target.naturalWidth < 80) heroImgError = true; }}
-           style="width:88px; height:88px; border-radius:50%; object-fit:cover; display:block; background:#f0ede8" />
+           style="width:88px; height:88px; border-radius:50%; object-fit:cover; object-position:var(--actor-avatar-focus); display:block; background:#f0ede8" />
     {:else}
       <div style="width:88px; height:88px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#f0ede8; color:#a8a29e; font-size:26px; font-weight:600">{initials(actorRow.canonical_nm)}</div>
     {/if}
