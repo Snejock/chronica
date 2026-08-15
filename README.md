@@ -43,7 +43,8 @@ MOEX → moex-fetcher ──────────┘                         
 | **Redis** | LRU-кэш без персистентности (512 МБ, `allkeys-lru`) |
 | **RedisInsight** | Web UI для Redis · `http://localhost:35540` |
 | **Ollama** | Локальный запуск LLM для генерации эмбеддингов новостей |
-| **DeepSeek** | Облачный LLM API (`deepseek-v4-flash`) для генерации сводок, брифов и реакций на новости — вызывается из процессоров Redpanda Connect (`dwh/rpc/dds/`, `dwh/rpc/dm/`) |
+| **DeepSeek** | Облачный LLM API (`deepseek-v4-flash`) для генерации сводок, брифов, реакций и извлечения мест событий из новостей — вызывается из процессоров Redpanda Connect (`dwh/rpc/dds/`, `dwh/rpc/dm/`) |
+| **GeoNames** | Внешний API геокодирования (`api.geonames.org`) для стандартизации мест событий новостей — вызывается из пайплайна `dwh/rpc/dds/LOAD_DDS_T_NEWS_LOCATIONS.yaml` с rate limit под бесплатный тариф (требует `GEONAMES__USERNAME` в `.env`) |
 | **dbt** | Трансформации данных поверх DWH |
 | **MinIO** | S3-совместимое объектное хранилище |
 
@@ -63,7 +64,8 @@ Pydantic-модели, конфигурации и утилиты, раздел�
 - **Python** 3.14+ · [uv](https://github.com/astral-sh/uv)
 - **БД**: PostgreSQL, ClickHouse, Redis (LRU-кэш)
 - **Брокер**: Redpanda + Redpanda Connect
-- **LLM**: DeepSeek (cloud API, сводки/брифы/реакции) · Ollama (локальные эмбеддинги)
+- **LLM**: DeepSeek (cloud API, сводки/брифы/реакции/места событий) · Ollama (локальные эмбеддинги)
+- **Внешние API**: GeoNames (геокодирование мест событий)
 - **Дашборд**: Evidence.dev (SvelteKit)
 - **Инфраструктура**: Docker Compose
 

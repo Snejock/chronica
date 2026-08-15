@@ -94,6 +94,9 @@ File naming: `{LOAD|RELOAD}_{SCHEMA}_{TABLE}.yaml` (upper snake case, mirrors th
 
 Reference files:
 - `dwh/rpc/dds/LOAD_DDS_S_NEWS_TEXTS.yaml` — streaming pattern with an LLM translation branch.
+- `dwh/rpc/dds/LOAD_DDS_T_NEWS_LOCATIONS.yaml` — LLM extraction + external API standardization
+  (GeoNames) with a `rate_limit` resource and a self-learning alias cache (Redis + `s_*_aliases`);
+  `LOAD_DDS_T_NEWS_ACTORS.yaml` is the same pattern against Wikidata.
 - `dwh/rpc/dm/LOAD_DM_STORY_SUMMARIES_D.yaml` — periodic LLM-enrichment pattern.
 - `dwh/rpc/bds/LOAD_BDS_B_UNEWS.yaml` — trivial `REFRESH MATERIALIZED VIEW` pipeline.
 
@@ -114,6 +117,9 @@ Production pipelines call the **DeepSeek cloud API**
 Temperature varies by task (≈0.0 for translation, 0.3–0.4 for summarization/briefs).
 Embeddings (`vector(768)`) are generated locally via Ollama (`http://dwh-ol-1:11434/api/embed`,
 see `dwh/rpc/dds/LOAD_DDS_S_NEWS_EMBEDDINGS.yaml`) — Ollama is not used for summaries/briefs.
+Non-LLM external APIs: Wikidata (actor resolution) and GeoNames (event-location geocoding,
+`GEONAMES__USERNAME` env key, throttled via the `geonames_api` rate-limit resource in
+`dwh/compose/redpanda/config/resources.yaml`).
 
 ## Services (Python)
 
@@ -138,7 +144,8 @@ reading from the `bds`/`dm` layers. Pages live under `evidence/pages/*.md`. Dev 
 - Env: a single root `.env` is the only active config, read by everything — Compose
   interpolation (`${...}` in `dwh/compose/*`), every service's `env_file:` (`services/*/compose/`,
   `evidence/compose/`), and the shared pydantic `Config` (`common/models/Config.py`). Nested-style
-  keys (`POSTGRES__*`, `CLICKHOUSE__*`, `BROKER__*`, `DEEPSEEK__API_KEY`, `GOOGLE_AI__API_KEY`).
+  keys (`POSTGRES__*`, `CLICKHOUSE__*`, `BROKER__*`, `DEEPSEEK__API_KEY`, `GOOGLE_AI__API_KEY`,
+  `GEONAMES__USERNAME`).
   Root `.env.server` is an inert copy of local-dev values (external `loki` addresses/ports) —
   nothing reads it automatically; to develop from a laptop, manually copy it over `.env`.
 - CI/CD: `.github/workflows/deploy.yaml` — push to `master` triggers an SSH step that runs
