@@ -216,7 +216,9 @@ pipeline:
               headers:
                 User-Agent: "Chronica/1.0 (contact: s7.chernov@gmail.com)"
               rate_limit: geonames_api
-              timeout: 30s
+              # 90s: бесплатный сервер GeoNames в час пик отдаёт style=FULL (сотни
+              # alternateNames на кандидата) очень медленно — 30s не хватало дочитать тело
+              timeout: 90s
               retries: 2
               retry_period: "3s"
           - catch:
