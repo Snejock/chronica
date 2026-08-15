@@ -1,0 +1,535 @@
+input:
+  redpanda:
+    seed_brokers: ["dwh-rp-1:9092"]
+    topics: ["news_translated"]
+    consumer_group: "LOAD_DDS_T_NEWS_LOCATIONS"
+
+pipeline:
+  threads: 1
+  processors:
+    - label: decode
+      schema_registry_decode:
+        url: "http://dwh-rp-1:8081"
+    - catch:
+        - log:
+            level: ERROR
+            message: "❌ AVRO DECODE FAILED: ${! error() }"
+        - mapping: 'root = deleted()'
+
+    # работает только с англоязычной версией новости — единый рабочий язык для LLM-шагов
+    - mapping: |
+        root = if this.language_code != "en" { deleted() } else { this }
+
+    - branch:
+        processors:
+          - try:
+              - label: redis_check
+                cache:
+                  resource: redis_cache
+                  operator: exists
+                  key: "processed:dds.t_news_locations:${! this.news_link.string() }"
+        result_map: 'meta is_processed = content().string().catch("false")'
+
+    - mapping: |
+        root = if meta("is_processed") == "true" { deleted() } else { this }
+
+    # извлечение мест события
+    - branch:
+        request_map: |
+          let system_instruction = """
+            You are an expert news analyst. Extract the geographic locations where the EVENT described
+            in the news article takes place.
+
+            Return a JSON object with a single field "locations": an array of objects, each with:
+            - location_nm (string) — the place name exactly as it appears in the article
+            - search_nm (string) — the canonical English toponym for this place, suitable for looking it
+              up in the GeoNames gazetteer. Expand and disambiguate: prefer the full official English
+              name, and append the containing region/country when it helps identification
+              (e.g. "Khuzestan" -> "Khuzestan Province, Iran"; "the capital of France" -> "Paris, France").
+              If you cannot confidently expand the name, repeat location_nm as-is.
+            - context_txt (string, in English) — a short phrase describing what happens at this place in
+              the article and what kind of place it is (e.g. "city in eastern Ukraine hit by missile
+              strikes", "sea where the tanker collision occurred")
+            - confidence_prt (float, 0.00-1.00) — how confident you are this is a real place where the
+              described event occurs
+
+            Rules:
+            - Only include places where the described EVENT actually happens or is directly located.
+            - Do NOT include: the location of the news agency or publication (datelines), the location
+              where an official merely speaks or comments from, places mentioned only in comparisons,
+              historical background, or hypothetical scenarios.
+            - Keep the granularity as stated in the text: if the article names a city, extract the city;
+              if it only names a country or region, extract that country or region; seas, oceans and
+              other water bodies count as locations too. Do not invent a more specific place than the
+              text supports, and do not add parent regions as separate entries unless the text itself
+              treats them as event locations.
+            - Adjectives of nationality are not locations ("Russian forces" alone does not make Russia
+              a location; but "strikes on Kharkiv" makes Kharkiv one).
+            - Do not invent places not mentioned in the text.
+            - If the event location is not identifiable, return {"locations": []}.
+
+            Return JSON only, no explanations.
+          """
+
+          let prompt_text = """
+            News:
+            Title: """ + this.title_txt.or("") + """
+            Summary: """ + this.summary_txt.or("") + """
+
+            Your response (JSON only):
+          """
+
+          root = {
+            "model": "deepseek-v4-flash",
+            "stream": false,
+            "temperature": 0.0,
+            "top_p": 0.1,
+            "response_format": { "type": "json_object" },
+            "messages": [
+              { "role": "system", "content": $system_instruction },
+              { "role": "user",   "content": $prompt_text }
+            ]
+          }
+        processors:
+          - label: http_extract_locations
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 3m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ LLM API failed after retries: ${! error() }"
+          - mapping: |
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
+              root.locations = if $result != null { $result.locations } else { null }
+        result_map: |
+          root.locations = this.locations
+
+    # отметка новости обработанной сразу — только когда LLM отработал и локации не найдены
+    - branch:
+        request_map: |
+          root = if this.locations != null && this.locations.type() == "array" && this.locations.length() == 0 { this } else { deleted() }
+        processors:
+          - cache:
+              resource: redis_cache
+              operator: set
+              key: "processed:dds.t_news_locations:${! this.news_link.string() }"
+              value: "true"
+
+    - mapping: |
+        root = if this.locations == null || this.locations.type() != "array" || this.locations.length() == 0 { deleted() } else { this }
+
+    # разворачивание одной новости в N сообщений (по числу извлечённых локаций)
+    - mapping: |
+        let news_link = this.news_link.string()
+        root = this.locations.map_each(l -> {
+          "news_link": $news_link,
+          "raw_location_nm": l.location_nm.or("").string().catch(""),
+          "search_nm": l.search_nm.or(l.location_nm.or("")).string().catch(""),
+          "context_txt": l.context_txt.or("").string().catch(""),
+          "confidence_prt": l.confidence_prt.or(null).number().catch(null)
+        })
+
+    - mapping: |
+        root = if this.type() == "array" && this.length() > 0 { this } else { deleted() }
+
+    - unarchive:
+        format: json_array
+
+    - mapping: |
+        root = if this.raw_location_nm == "" { deleted() } else { this }
+
+    - mapping: |
+        root = this
+        root.alias_key = this.raw_location_nm.trim().lowercase()
+
+    # резолв локации
+
+    # проверка наличия алиаса в кэше (redis) — сначала дешёвый exists (никогда не ошибается),
+    # чтобы не заваливать метрики/логи штатными cache-miss на operator: get
+    - branch:
+        processors:
+          - try:
+              - label: redis_check_alias_exists
+                cache:
+                  resource: redis_cache
+                  operator: exists
+                  key: "lookup:dds.s_location_aliases:${! this.alias_key }"
+        result_map: 'root.alias_cached = content().bool().catch(false)'
+
+    # чтение значения — только если ключ точно есть
+    - branch:
+        request_map: |
+          root = if this.alias_cached { this } else { deleted() }
+        processors:
+          - try:
+              - label: redis_check_alias_get
+                cache:
+                  resource: redis_cache
+                  operator: get
+                  key: "lookup:dds.s_location_aliases:${! this.alias_key }"
+        result_map: 'root.location_id = content().string().catch(null)'
+
+    # сброс флага ошибки от штатного cache-miss, чтобы не доехал до конца пайплайна
+    - catch: []
+
+    # проверка наличия алиаса в БД
+    # в случае успеха запись добавляется в кэш (redis)
+    - branch:
+        request_map: |
+          root = if this.location_id == null { this } else { deleted() }
+        processors:
+          - label: postgres_check_alias
+            sql_raw:
+              driver: postgres
+              dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+              query: "SELECT alias_nm, location_id FROM dds.s_location_aliases WHERE alias_nm = $1"
+              args_mapping: "root = [this.alias_key]"
+          - branch:
+              request_map: |
+                root = if this.length() > 0 { this } else { deleted() }
+              processors:
+                - cache:
+                    resource: redis_cache
+                    operator: set
+                    key: 'lookup:dds.s_location_aliases:${! this.index(0).alias_nm.string() }'
+                    value: '${! this.index(0).location_id.string() }'
+        result_map: 'root.location_id = this.index(0).location_id.catch(null)'
+
+    # поиск кандидатов в GeoNames (только если не нашли по алиасам);
+    # style=FULL сразу отдаёт все атрибуты (alternateNames, координаты, иерархию) —
+    # отдельный запрос карточки по выбранному id не нужен
+    - branch:
+        request_map: |
+          root = if this.location_id != null { deleted() } else { this }
+        processors:
+          - label: http_geonames_search
+            http:
+              url: 'http://api.geonames.org/searchJSON?q=${! this.search_nm.escape_url_query() }&maxRows=5&style=FULL&username=${GEONAMES_USERNAME}'
+              verb: GET
+              headers:
+                User-Agent: "Chronica/1.0 (contact: s7.chernov@gmail.com)"
+              rate_limit: geonames_api
+              timeout: 30s
+              retries: 2
+              retry_period: "3s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ GeoNames search failed: ${! error() }"
+              - mapping: 'root = {"geonames": []}'
+          # GeoNames и ошибки (лимит, неверный username) отдаёт как HTTP 200 с полем status
+          - branch:
+              request_map: |
+                root = if this.status.type().catch("null") != "null" { this } else { deleted() }
+              processors:
+                - log:
+                    level: WARN
+                    message: '❌ GeoNames API error: ${! this.status.string().catch("") }'
+        result_map: |
+          root.candidates_full = this.geonames.catch([]).slice(0, 5)
+          root.candidates = this.geonames.catch([]).slice(0, 5).map_each(c -> {
+            "geoname_id": c.geonameId.or(null),
+            "name": c.name.or("").string().catch(""),
+            "country": c.countryName.or("").string().catch(""),
+            "admin1": c.adminName1.or("").string().catch(""),
+            "fcode": c.fcode.or("").string().catch(""),
+            "population": c.population.or(0).number().catch(0)
+          })
+
+    # выбор правильного кандидата
+    - branch:
+        request_map: |
+          let system_instruction = """
+            You are an expert geographic entity-disambiguation assistant. Given a place name mentioned
+            in a news article, a short context describing the event at this place, and a list of
+            candidate entries from the GeoNames gazetteer, decide which candidate (if any) is the
+            correct place.
+
+            Return a JSON object: {"geoname_id": <integer id of the chosen candidate>} if you are
+            confident about a match, or {"geoname_id": null} if none of the candidates is a confident
+            match.
+
+            Guidance:
+            - Match the granularity implied by the context: a city context must not resolve to a
+              country entry, and vice versa; administrative divisions (fcode ADM*) differ from
+              populated places (fcode PPL*).
+            - When several candidates share a name, prefer the one whose country/region and feature
+              type fit the context; population is a hint for prominence, not a rule.
+            - Only pick a candidate if you are reasonably confident. Do not guess.
+          """
+
+          let prompt_text = """
+            Place as mentioned in the article: """ + this.raw_location_nm.string().catch("") + """
+            Context from the article: """ + this.context_txt.string().catch("") + """
+
+            Candidates:
+            """ + this.candidates.catch([]).string() + """
+
+            Your answer (JSON only):
+          """
+
+          root = if this.location_id != null || this.candidates.catch([]).length() == 0 {
+            deleted()
+          } else {
+            {
+              "model": "deepseek-v4-flash",
+              "stream": false,
+              "temperature": 0.0,
+              "top_p": 0.1,
+              "response_format": { "type": "json_object" },
+              "messages": [
+                { "role": "system", "content": $system_instruction },
+                { "role": "user",   "content": $prompt_text }
+              ]
+            }
+          }
+        processors:
+          - label: http_disambiguate
+            http:
+              url: "https://api.deepseek.com/chat/completions"
+              verb: POST
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer ${DEEPSEEK_API_KEY}"
+              timeout: 1m
+              retries: 3
+              retry_period: "5s"
+          - catch:
+              - log:
+                  level: WARN
+                  message: "❌ Disambiguation LLM failed: ${! error() }"
+          - mapping: |
+              let result = this.choices.index(0).message.content.parse_json().catch(null)
+              root.chosen_geoname_id = if $result != null { $result.geoname_id } else { null }
+        result_map: 'root.chosen_geoname_id = this.chosen_geoname_id.catch(null)'
+
+    # финализация: получение выбранного кандидата из уже полученного ответа GeoNames,
+    # фиксация location_id и сбор атрибутов; ru-имя — из alternateNames (lang=ru,
+    # приоритет isPreferredName), если его нет — пишем только en-строку
+    - mapping: |
+        root = this
+        let chosen = this.candidates_full.catch([]).filter(c ->
+          c.geonameId.string().catch("") == this.chosen_geoname_id.string().catch("-")
+        ).index(0).catch(null)
+
+        if this.location_id == null && $chosen != null {
+          let fcl_to_type = {
+            "P": "city",
+            "A": "admin",
+            "H": "water",
+            "T": "terrain",
+            "L": "area",
+            "S": "spot",
+            "R": "route",
+            "U": "undersea",
+            "V": "forest"
+          }
+          root.location_id = $chosen.geonameId.string()
+          root.location_type = $fcl_to_type.get($chosen.fcl.string().catch("")).or("other")
+
+          let canonical_en = $chosen.name.or(null)
+          let ru_names = $chosen.alternateNames.catch([]).filter(a -> a.lang.catch("") == "ru")
+          let canonical_ru = $ru_names.filter(a -> a.isPreferredName.catch(false)).index(0).name.catch(null).or($ru_names.index(0).name.catch(null))
+          # человекочитаемая иерархия "регион, страна" — общая для обоих языков (GeoNames
+          # отдаёт adminName1/countryName только по-английски)
+          let hierarchy_txt = [$chosen.adminName1.catch(null), $chosen.countryName.catch(null)].filter(p -> p != null && p != "").join(", ")
+          let source_link = "geonames.org/" + $chosen.geonameId.string()
+
+          let en_row = if $canonical_en != null {
+            {
+              "language_code": "en",
+              "canonical_nm": $canonical_en,
+              "description_txt": if $hierarchy_txt == "" { null } else { $hierarchy_txt },
+              "source_link": $source_link
+            }
+          } else { null }
+
+          let ru_row = if $canonical_ru != null {
+            {
+              "language_code": "ru",
+              "canonical_nm": $canonical_ru,
+              "description_txt": if $hierarchy_txt == "" { null } else { $hierarchy_txt },
+              "source_link": $source_link
+            }
+          } else { null }
+
+          root.details = [$en_row, $ru_row].filter(d -> d != null)
+
+          # lat/lng в style=FULL приходят строками
+          root.geo = {
+            "geo_lat": $chosen.lat.number().catch(null),
+            "geo_lon": $chosen.lng.number().catch(null),
+            "continent_code": $chosen.continentCode.catch(null),
+            "country_code": $chosen.countryCode.catch(null),
+            "country_nm": $chosen.countryName.catch(null),
+            "region_nm": $chosen.adminName1.catch(null),
+            "feature_code": $chosen.fcode.catch(null)
+          }
+        }
+
+    # не удалось определить ни через кэш алиасов, ни через GeoNames — упоминание отбрасываем
+    - mapping: |
+        root = if this.location_id == null { deleted() } else { this }
+
+output:
+  label: load_dds_t_news_locations
+  broker:
+    pattern: fan_out_sequential
+    outputs:
+      # создание записи в хабе один раз при первом упоминании локации — должно случиться
+      # раньше остальных веток (у них FK на location_id)
+      - label: out_h_locations
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.h_locations (location_id, location_type, _source_system)
+            VALUES ($1, $2, 'GN')
+            ON CONFLICT (location_id) DO NOTHING;
+          args_mapping: 'root = [this.location_id, this.location_type.or("other")]'
+          batching:
+            count: 10
+            period: 1s
+
+      # детали по языкам — только когда локация резолвилась свежо через GeoNames в этом
+      # сообщении; должна отработать раньше out_t_news_locations, чтобы там canonical_nm
+      # уже был в базе (см. LEFT JOIN ниже) — отсюда и её место в списке, и
+      # fan_out_sequential у broker'а
+      - label: out_s_location_details
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_location_details (location_id, language_code, canonical_nm, description_txt, source_link)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (location_id, language_code) DO UPDATE SET
+              _loaded_dttm = now(),
+              canonical_nm = EXCLUDED.canonical_nm,
+              description_txt = EXCLUDED.description_txt,
+              source_link = EXCLUDED.source_link;
+          args_mapping: |
+            root = [
+              this.location_id,
+              this.language_code,
+              this.canonical_nm,
+              this.description_txt,
+              this.source_link
+            ]
+          batching:
+            count: 10
+            period: 1s
+        processors:
+          - mapping: |
+              root = if this.details.or([]).length() == 0 { deleted() } else { this }
+          - mapping: |
+              let location_id = this.location_id
+              root = this.details.map_each(d -> {
+                "location_id": $location_id,
+                "language_code": d.language_code,
+                "canonical_nm": d.canonical_nm,
+                "description_txt": d.description_txt,
+                "source_link": d.source_link
+              })
+          - unarchive:
+              format: json_array
+
+      # языконезависимые геоатрибуты — тоже только при свежей резолюции
+      - label: out_s_location_geo
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_location_geo (location_id, geo_lat, geo_lon, continent_code, country_code, country_nm, region_nm, feature_code)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (location_id) DO UPDATE SET
+              _loaded_dttm = now(),
+              geo_lat = EXCLUDED.geo_lat,
+              geo_lon = EXCLUDED.geo_lon,
+              continent_code = EXCLUDED.continent_code,
+              country_code = EXCLUDED.country_code,
+              country_nm = EXCLUDED.country_nm,
+              region_nm = EXCLUDED.region_nm,
+              feature_code = EXCLUDED.feature_code;
+          args_mapping: |
+            root = [
+              this.location_id,
+              this.geo.geo_lat,
+              this.geo.geo_lon,
+              this.geo.continent_code,
+              this.geo.country_code,
+              this.geo.country_nm,
+              this.geo.region_nm,
+              this.geo.feature_code
+            ]
+          batching:
+            count: 10
+            period: 1s
+        processors:
+          - mapping: |
+              root = if this.geo.type().catch("null") != "object" { deleted() } else { this }
+
+      # главная связка новость-локация — пишется в любом случае (кэш-хит или свежая
+      # резолюция); location_nm — canonical_nm из s_location_details, если он уже есть,
+      # иначе сырое имя из статьи
+      - label: out_t_news_locations
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.t_news_locations (news_id, location_id, model_nm, published_dttm, location_nm, confidence_prt)
+            SELECT xxh64($1), $2, $3, h.published_dttm, COALESCE(sd.canonical_nm, $4), $5
+            FROM dds.h_news h
+            LEFT JOIN dds.s_location_details sd ON sd.location_id = $2 AND sd.language_code = 'en'
+            WHERE h.news_id = xxh64($1)
+            ON CONFLICT (news_id, location_id, model_nm) DO NOTHING;
+          args_mapping: |
+            root = [
+              this.news_link,
+              this.location_id,
+              "deepseek-v4-flash:cloud",
+              this.raw_location_nm,
+              this.confidence_prt.catch(null)
+            ]
+          batching:
+            count: 10
+            period: 1s
+
+      # отметка новости обработанной для непустого locations
+      - label: out_redis_processed
+        cache:
+          target: redis_cache
+          key: '${! meta("processed_cache_key") }'
+        processors:
+          - mapping: |
+              meta processed_cache_key = "processed:dds.t_news_locations:" + this.news_link
+              root = "true"
+
+      # фиксирование написания топонима, которое привело к этому location_id
+      - label: out_s_location_aliases
+        sql_raw:
+          driver: postgres
+          dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
+          query: |
+            INSERT INTO dds.s_location_aliases (alias_nm, location_id)
+            VALUES ($1, $2)
+            ON CONFLICT (alias_nm) DO NOTHING;
+          args_mapping: 'root = [this.alias_key, this.location_id]'
+          batching:
+            count: 10
+            period: 1s
+
+      - label: out_redis_alias
+        cache:
+          target: redis_cache
+          key: '${! meta("alias_cache_key") }'
+        processors:
+          - mapping: |
+              meta alias_cache_key = "lookup:dds.s_location_aliases:" + this.alias_key
+              root = this.location_id.string()
