@@ -315,9 +315,7 @@ pipeline:
     # приоритет isPreferredName), если его нет — пишем только en-строку
     - mapping: |
         root = this
-        let chosen = this.candidates_full.catch([]).filter(c ->
-          c.geonameId.string().catch("") == this.chosen_geoname_id.string().catch("-")
-        ).index(0).catch(null)
+        let chosen = this.candidates_full.catch([]).filter(c -> c.geonameId.string().catch("") == this.chosen_geoname_id.string().catch("-")).index(0).catch(null)
 
         if this.location_id == null && $chosen != null {
           let fcl_to_type = {
