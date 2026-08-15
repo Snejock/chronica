@@ -1,6 +1,6 @@
 appearance:
-  default: system
-  switcher: true
+  default: light
+  switcher: false
 
 theme:
   colorPalettes:
