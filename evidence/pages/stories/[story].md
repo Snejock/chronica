@@ -677,7 +677,7 @@ hide_breadcrumbs: true
     // Координаты могут прийти не сразу: при первом монтировании реактивные
     // данные ещё не загрузились (lat/lon = NaN). use:-action без update()
     // вызывается лишь раз, поэтому ждём через update() валидных значений.
-    async function tryInit({ lat, lon, zoom }) {
+    async function tryInit({ lat, lon, zoom, interactive: mapInteractive = true }) {
       if (map || initializing || destroyed) return;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
       initializing = true;
@@ -702,14 +702,17 @@ hide_breadcrumbs: true
       if (destroyed) return;
 
       // Зум кнопками и пинчем, пан мышью и пальцем; колесо мыши намеренно
-      // оставлено странице — без scroll-trap.
+      // оставлено странице — без scroll-trap. Карта в карусели «Хроники»
+      // (interactive:false) — только просмотр и клик по маркерам: там она один
+      // из нескольких слайдов, и пан/зум по ней конфликтовали бы со свайпом
+      // между слайдами.
       map = L.map(node, {
         center: [lat, lon],
         zoom,
-        zoomControl:      true,
-        dragging:         true,
-        touchZoom:        true,
-        doubleClickZoom:  true,
+        zoomControl:      mapInteractive,
+        dragging:         mapInteractive,
+        touchZoom:        mapInteractive,
+        doubleClickZoom:  mapInteractive,
         scrollWheelZoom:  false,
         boxZoom:          false,
         keyboard:         false,
@@ -733,29 +736,37 @@ hide_breadcrumbs: true
       // Safari игнорирует touch-action на карте и вместе с паном тянет
       // rubber-band самой страницы (заметно у нижнего края). Глушим прокрутку
       // страницы от касаний карты явно; passive:false обязателен, иначе
-      // preventDefault в touchmove не имеет силы.
-      node.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+      // preventDefault в touchmove не имеет силы. Только для интерактивной
+      // карты — иначе в некликабельной карусельной карте это же самое
+      // блокировало бы горизонтальный свайп между слайдами карусели.
+      if (mapInteractive) {
+        node.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+      }
 
       // Разворот карты на полный экран. Узел переносится в body: под предком
       // с transform (rubber-band двигает pageEl) position:fixed отсчитывался
       // бы от предка, а не от вьюпорта. В полноэкранном режиме включаем зум
       // колесом — scroll-trap здесь не проблема, пользователь вошёл в карту
-      // осознанно и выходит кнопкой или Esc.
+      // осознанно и выходит кнопкой или Esc. В некликабельной карусельной
+      // карте кнопки нет вовсе — незачем разворачивать то, что не листается.
       let expanded = false;
       let restoreSpot = null;
+      let expandBtn = null;
 
       const svgExpand = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8.5 1.5h4v4M5.5 12.5h-4v-4M12.5 1.5 8 6M1.5 12.5 6 8"/></svg>';
       const svgClose  = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 2l10 10M12 2 2 12"/></svg>';
 
-      const expandBtn = document.createElement('button');
-      expandBtn.type = 'button';
-      expandBtn.className = 'map-expand-btn';
-      expandBtn.setAttribute('aria-label', 'Развернуть карту');
-      expandBtn.innerHTML = svgExpand;
-      node.appendChild(expandBtn);
-      // клики/колесо по кнопке не должны долетать до карты (пан/дабл-клик-зум)
-      L.DomEvent.disableClickPropagation(expandBtn);
-      L.DomEvent.disableScrollPropagation(expandBtn);
+      if (mapInteractive) {
+        expandBtn = document.createElement('button');
+        expandBtn.type = 'button';
+        expandBtn.className = 'map-expand-btn';
+        expandBtn.setAttribute('aria-label', 'Развернуть карту');
+        expandBtn.innerHTML = svgExpand;
+        node.appendChild(expandBtn);
+        // клики/колесо по кнопке не должны долетать до карты (пан/дабл-клик-зум)
+        L.DomEvent.disableClickPropagation(expandBtn);
+        L.DomEvent.disableScrollPropagation(expandBtn);
+      }
 
       function onEscape(e) { if (e.key === 'Escape') setExpanded(false); }
 
@@ -779,8 +790,10 @@ hide_breadcrumbs: true
           document.body.style.overflow = 'hidden'; // страница под картой не прокручивается
           document.addEventListener('keydown', onEscape);
           map.scrollWheelZoom.enable();
-          expandBtn.innerHTML = svgClose;
-          expandBtn.setAttribute('aria-label', 'Свернуть карту');
+          if (expandBtn) {
+            expandBtn.innerHTML = svgClose;
+            expandBtn.setAttribute('aria-label', 'Свернуть карту');
+          }
         } else {
           node.style.cssText = restoreSpot.cssText;
           node.classList.remove('map-expanded');
@@ -789,15 +802,17 @@ hide_breadcrumbs: true
           document.body.style.overflow = '';
           document.removeEventListener('keydown', onEscape);
           map.scrollWheelZoom.disable();
-          expandBtn.innerHTML = svgExpand;
-          expandBtn.setAttribute('aria-label', 'Развернуть карту');
+          if (expandBtn) {
+            expandBtn.innerHTML = svgExpand;
+            expandBtn.setAttribute('aria-label', 'Развернуть карту');
+          }
         }
         renderPeriodCtl();
         // размер контейнера сменился — пересчитать вьюпорт карты и тултипы
         requestAnimationFrame(() => { map.invalidateSize(); applyTooltipDirections(); });
       }
 
-      expandBtn.addEventListener('click', () => setExpanded(!expanded));
+      if (expandBtn) expandBtn.addEventListener('click', () => setExpanded(!expanded));
       collapseExpanded = () => setExpanded(false);
 
       // Переключатель периода в полноэкранном режиме: пилюли страницы остаются
@@ -1620,7 +1635,7 @@ ORDER BY n.published_dttm DESC
               </div>
             {:else if q_story[0] && Number.isFinite(+q_story[0].geo_lat)}
               <div class="-mx-4 -mt-3 mb-3 overflow-hidden" style="aspect-ratio:16/9; background:#f5f4f2; isolation:isolate">
-                <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5, locations: q_story_locations, linkBase: '/stories/' + params.story + '/locations' }}
+                <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5, locations: q_story_locations, linkBase: '/stories/' + params.story + '/locations', interactive: false }}
                      style="height:100%; width:100%; filter:grayscale({slideGrayscale[i] ?? 1}); transition:filter 0.3s ease"></div>
               </div>
             {/if}
