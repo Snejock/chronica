@@ -1003,6 +1003,20 @@ hide_breadcrumbs: true
     margin-top: env(safe-area-inset-top, 0px);
   }
 
+  /* Поверх системного статус-бара в fullscreen-режиме Telegram Mini App рисует ещё
+     и свою нативную панель (Назад/кебаб) — её высоту, как и в .c-header/.c-sidebar
+     выше по файлу (+layout.svelte), ни один safe-area API не отдаёт: это фиксированный
+     +44px поверх env(safe-area-inset-top), включается тем же классом html.tg-inapp. */
+  :global(html.tg-inapp .map-expanded .map-expand-btn) {
+    top: calc(10px + env(safe-area-inset-top, 0px) + 44px);
+  }
+  :global(html.tg-inapp .map-expanded .map-period-ctl) {
+    top: calc(10px + env(safe-area-inset-top, 0px) + 44px);
+  }
+  :global(html.tg-inapp .map-expanded .leaflet-top) {
+    margin-top: calc(env(safe-area-inset-top, 0px) + 44px);
+  }
+
   /* Переключатель периода на развёрнутой карте — пилюли как у встроенного
      фильтра раздела; создаётся из JS, поэтому :global. По умолчанию скрыт,
      display:flex выставляет renderPeriodCtl только в полноэкранном режиме. */
