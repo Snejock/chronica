@@ -21,6 +21,7 @@ hide_breadcrumbs: true
 
     let hitY = null, applied = 0, edge = null;
     let startX = null, startY = null, axis = null;
+    let ignoreGesture = false; // жест начат на интерактивной карте — не наш
 
     const isTop    = () => window.scrollY <= 1;
     const isBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
@@ -37,10 +38,14 @@ hide_breadcrumbs: true
       }
       hitY = null; applied = 0; edge = null;
       startX = null; startY = null; axis = null;
+      ignoreGesture = false;
     }
 
     function onTouchStart(e) {
       reset(false);
+      // Свайп, начатый на карте, принадлежит карте (пан Leaflet) — иначе
+      // вместе с паном срабатывает и наш rubber-band, оттягивая страницу.
+      ignoreGesture = !!(e.target.closest && e.target.closest('.leaflet-container'));
       if (e.touches.length === 1) {
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
@@ -48,6 +53,7 @@ hide_breadcrumbs: true
     }
 
     function onTouchMove(e) {
+      if (ignoreGesture) return;
       if (!pageEl || e.touches.length !== 1) return;
       const tx = e.touches[0].clientX;
       const ty = e.touches[0].clientY;
@@ -509,7 +515,19 @@ hide_breadcrumbs: true
       : { arrow: '▼', arrowColor: '#fca5a5', textColor: '#a8a29e', text: `${v.toFixed(1)}% за 24 ч.` };
   }
 
-  // Миникарта региона (как на странице /stories) — статичный Leaflet-просмотр.
+  // Фильтр периода «Карты событий»: сутки / неделя / весь сюжет. news_cnt
+  // подменяется на счётчик выбранного периода, локации без новостей за период
+  // скрываются с карты.
+  let mapPeriod = 'all';
+  $: mapLocations = Array.from(q_story_locations ?? [])
+    .map(l => ({
+      ...l,
+      news_cnt: mapPeriod === '1d' ? l.news_cnt_1d : mapPeriod === '7d' ? l.news_cnt_7d : l.news_cnt,
+    }))
+    .filter(l => +l.news_cnt > 0);
+
+  // Карта локаций сюжета — интерактивный Leaflet (зум, пан) с точками мест
+  // из новостей (q_story_locations).
   // Координаты приходят асинхронно из q_story, поэтому карта появляется в DOM
   // не сразу — инициализируем её через use:-action на момент монтирования
   // самого элемента, а не через onMount всей страницы.
@@ -517,6 +535,144 @@ hide_breadcrumbs: true
     let map;
     let destroyed = false;
     let initializing = false;
+    let Lref;               // модуль Leaflet после инициализации
+    let center;             // [lat, lon] центра сюжета — для fitBounds
+    let initialZoom = 5;    // зум по умолчанию, если локаций нет
+    let lastParams = params; // последние params — locations могут прийти после init
+    let locationsLayer;     // слой с точками упомянутых локаций
+    let locationsKey = null; // подпись отрисованного набора — защита от перерисовки
+    let markerPairs = [];   // пары [маркер, локация] текущего слоя — для тултипов
+    let openMarker = null;  // маркер с открытым тултипом — второй клик по нему уводит на страницу
+
+    const markerAccent = '#c2410c'; // акцент сайта — обводка и текст чипа в обоих состояниях
+
+    // Контурный чип: обычное состояние — белый фон с оранжевой обводкой и
+    // текстом; выбранный маркер (открыт тултип) — инверсия в сплошную заливку
+    // с белым текстом. Красим напрямую DOM span внутри divIcon — без
+    // пересоздания иконки/слоя.
+    function setMarkerActive(marker, active) {
+      const span = marker.getElement()?.firstElementChild;
+      if (!span) return;
+      span.style.background = active ? markerAccent : 'rgba(255,255,255,0.92)';
+      span.style.color      = active ? '#ffffff'     : markerAccent;
+    }
+    let collapseExpanded;   // выход из полноэкранного режима — нужен и в destroy
+    let refreshPeriodCtl;   // обновление переключателя периода — нужен в update()
+
+    // Ссылка на страницу локации: база (/stories/<id>/locations) приходит из
+    // params обоих мест использования use:leafletMap — сам story_id в строках
+    // q_story_locations не выбирается.
+    function locationUrl(l) {
+      return `${lastParams.linkBase}/${l.location_id}`;
+    }
+
+    // Тултипы: у контейнера карты overflow:hidden, и тултип с фиксированным
+    // direction:top у края карты срезается. Направление выбираем по положению
+    // маркера относительно границ: у левого края показываем справа, у
+    // верхнего — снизу и т.д. Карта интерактивная, поэтому пересчитываем после
+    // каждого изменения вьюпорта (zoomend/moveend); bindTooltip при повторном
+    // вызове сам заменяет прежний тултип.
+    function applyTooltipDirections() {
+      if (!map) return;
+      const size = map.getSize();
+      for (const [marker, l] of markerPairs) {
+        const p = map.latLngToContainerPoint(marker.getLatLng());
+        // смещения 13px — под увеличенный значок (радиус 12px + зазор)
+        let direction = 'top';
+        let offset = [0, -13];
+        if (p.x < 100)               { direction = 'right';  offset = [13, 0];  }
+        else if (size.x - p.x < 100) { direction = 'left';   offset = [-13, 0]; }
+        else if (p.y < 44)           { direction = 'bottom'; offset = [0, 13];  }
+        const wasOpen = marker === openMarker;
+        marker.bindTooltip(`${l.canonical_nm} · новостей: ${l.news_cnt}`, { direction, offset });
+        // bindTooltip пересоздаёт тултип — открытый по клику маркер должен
+        // остаться открытым и после пересчёта направления (пан/зум)
+        if (wasOpen) marker.openTooltip();
+      }
+    }
+
+    // Точки локаций, упомянутых в новостях сюжета. Массив приходит асинхронно
+    // (позже координат сюжета), поэтому вызывается и в конце tryInit, и из
+    // update(); слой перерисовывается целиком только при смене набора location_id.
+    function renderLocations(locations) {
+      if (!map || !Lref) return;
+      const list = (Array.isArray(locations) ? locations : [])
+        .filter(l => Number.isFinite(+l.geo_lat) && Number.isFinite(+l.geo_lon));
+      // ключ включает news_cnt: при смене периода фильтра набор точек может
+      // совпасть, а счётчики в тултипах — измениться
+      const key = list.map(l => `${l.location_id}:${l.news_cnt}`).join('|');
+      if (key === locationsKey) return;
+      locationsKey = key;
+
+      if (locationsLayer) locationsLayer.remove();
+      locationsLayer = Lref.layerGroup();
+      markerPairs = []; // тултипы вешаем после fitBounds (см. applyTooltipDirections)
+      openMarker = null; // слой пересоздан — прежние DOM-маркеры уже не существуют
+
+      for (const l of list) {
+        // Стили — инлайном: Svelte-скоуп из style-блока не достаёт до HTML,
+        // который Leaflet вставляет сам. Контурный чип: белый фон, оранжевая
+        // обводка и текст (акцент сайта, accent из evidence.config.yaml) —
+        // число публикаций локации шрифтом страницы. Выбранный маркер красится
+        // в setMarkerActive (инверсия в сплошную заливку). Для 1–2 цифр чип
+        // 24px, для трёхзначных счётчиков растягиваем в пилюлю, якорь держим
+        // в центре.
+        const cntLabel = String(l.news_cnt);
+        const iconW = cntLabel.length <= 2 ? 24 : 12 + cntLabel.length * 7;
+        const icon = Lref.divIcon({
+          className: '',
+          html: '<span style="display:flex; align-items:center; justify-content:center;'
+              + ` width:${iconW}px; height:24px; box-sizing:border-box; border-radius:12px;`
+              + ` background:rgba(255,255,255,0.92); border:1.5px solid ${markerAccent};`
+              + ' box-shadow:0 1px 3px rgba(0,0,0,0.18);'
+              + ` color:${markerAccent}; font-family:inherit; font-size:12px; font-weight:600;`
+              + ` line-height:1; font-style:normal">${cntLabel}</span>`,
+          iconSize:   [iconW, 24],
+          iconAnchor: [iconW / 2, 12],
+        });
+        const marker = Lref.marker([+l.geo_lat, +l.geo_lon], { icon, keyboard: false }).addTo(locationsLayer);
+        // Двухступенчатый клик — как тап по актёру в «Действующих лицах»:
+        // первый клик открывает тултип (на десктопе он обычно уже открыт
+        // наведением — тогда клик сразу переходит), повторный клик по уже
+        // открытому маркеру уводит на страницу локации. stopPropagation —
+        // чтобы клик по маркеру не долетал до обработчика клика по карте
+        // ниже (он закрывает тултип при клике мимо точек).
+        marker.on('click', (e) => {
+          Lref.DomEvent.stopPropagation(e);
+          // Состояние «выбран» — наше собственное (openMarker), а не
+          // marker.isTooltipOpen(): у Leaflet-тултипа есть встроенное
+          // поведение hover (mouseover открывает, mouseout закрывает),
+          // которое может молча закрыть тултип между двумя кликами —
+          // тогда isTooltipOpen() соврёт, что маркер не выбран.
+          if (openMarker === marker) {
+            goto(locationUrl(l));
+            return;
+          }
+          if (openMarker && openMarker !== marker) {
+            openMarker.closeTooltip();
+            setMarkerActive(openMarker, false);
+          }
+          marker.openTooltip();
+          setMarkerActive(marker, true);
+          openMarker = marker;
+        });
+        markerPairs.push([marker, l]);
+      }
+      locationsLayer.addTo(map);
+
+      // Вьюпорт: охватить все локации; maxZoom — чтобы единственная локация не
+      // давала зум в упор. Без локаций — фолбэк на ручные координаты сюжета из
+      // s_story_details (center), чтобы карта не оставалась пустой.
+      // animate:false — тултипам ниже нужны финальные контейнерные координаты.
+      if (list.length) {
+        const bounds = Lref.latLngBounds(list.map(l => [+l.geo_lat, +l.geo_lon]));
+        map.fitBounds(bounds, { padding: [20, 20], maxZoom: 5, animate: false });
+      } else {
+        map.setView(center, initialZoom, { animate: false });
+      }
+
+      applyTooltipDirections();
+    }
 
     // Координаты могут прийти не сразу: при первом монтировании реактивные
     // данные ещё не загрузились (lat/lon = NaN). use:-action без update()
@@ -545,42 +701,163 @@ hide_breadcrumbs: true
       ]);
       if (destroyed) return;
 
+      // Зум кнопками и пинчем, пан мышью и пальцем; колесо мыши намеренно
+      // оставлено странице — без scroll-trap.
       map = L.map(node, {
         center: [lat, lon],
         zoom,
-        zoomControl:      false,
-        dragging:         false,
-        touchZoom:        false,
-        doubleClickZoom:  false,
+        zoomControl:      true,
+        dragging:         true,
+        touchZoom:        true,
+        doubleClickZoom:  true,
         scrollWheelZoom:  false,
         boxZoom:          false,
         keyboard:         false,
         attributionControl: false,
       });
 
+      // При живом зуме/пане позиция маркера относительно краёв меняется —
+      // пересчитываем направления тултипов после каждого сдвига вьюпорта.
+      map.on('zoomend moveend', applyTooltipDirections);
+
+      // Клик по карте вне маркера закрывает открытый тултип (marker.on('click')
+      // выше останавливает всплытие, так что сюда долетают только клики мимо).
+      map.on('click', () => {
+        if (openMarker) {
+          openMarker.closeTooltip();
+          setMarkerActive(openMarker, false);
+          openMarker = null;
+        }
+      });
+
+      // Safari игнорирует touch-action на карте и вместе с паном тянет
+      // rubber-band самой страницы (заметно у нижнего края). Глушим прокрутку
+      // страницы от касаний карты явно; passive:false обязателен, иначе
+      // preventDefault в touchmove не имеет силы.
+      node.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+      // Разворот карты на полный экран. Узел переносится в body: под предком
+      // с transform (rubber-band двигает pageEl) position:fixed отсчитывался
+      // бы от предка, а не от вьюпорта. В полноэкранном режиме включаем зум
+      // колесом — scroll-trap здесь не проблема, пользователь вошёл в карту
+      // осознанно и выходит кнопкой или Esc.
+      let expanded = false;
+      let restoreSpot = null;
+
+      const svgExpand = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8.5 1.5h4v4M5.5 12.5h-4v-4M12.5 1.5 8 6M1.5 12.5 6 8"/></svg>';
+      const svgClose  = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 2l10 10M12 2 2 12"/></svg>';
+
+      const expandBtn = document.createElement('button');
+      expandBtn.type = 'button';
+      expandBtn.className = 'map-expand-btn';
+      expandBtn.setAttribute('aria-label', 'Развернуть карту');
+      expandBtn.innerHTML = svgExpand;
+      node.appendChild(expandBtn);
+      // клики/колесо по кнопке не должны долетать до карты (пан/дабл-клик-зум)
+      L.DomEvent.disableClickPropagation(expandBtn);
+      L.DomEvent.disableScrollPropagation(expandBtn);
+
+      function onEscape(e) { if (e.key === 'Escape') setExpanded(false); }
+
+      function setExpanded(on) {
+        if (on === expanded || !map) return;
+        expanded = on;
+        if (on) {
+          restoreSpot = { parent: node.parentNode, next: node.nextSibling, cssText: node.style.cssText };
+          document.body.appendChild(node);
+          node.style.position = 'fixed';
+          node.style.inset = '0';
+          node.style.width = 'auto';
+          node.style.height = 'auto';
+          node.style.zIndex = '9999';
+          node.style.borderRadius = '0';
+          document.body.style.overflow = 'hidden'; // страница под картой не прокручивается
+          document.addEventListener('keydown', onEscape);
+          map.scrollWheelZoom.enable();
+          expandBtn.innerHTML = svgClose;
+          expandBtn.setAttribute('aria-label', 'Свернуть карту');
+        } else {
+          node.style.cssText = restoreSpot.cssText;
+          restoreSpot.parent.insertBefore(node, restoreSpot.next);
+          restoreSpot = null;
+          document.body.style.overflow = '';
+          document.removeEventListener('keydown', onEscape);
+          map.scrollWheelZoom.disable();
+          expandBtn.innerHTML = svgExpand;
+          expandBtn.setAttribute('aria-label', 'Развернуть карту');
+        }
+        renderPeriodCtl();
+        // размер контейнера сменился — пересчитать вьюпорт карты и тултипы
+        requestAnimationFrame(() => { map.invalidateSize(); applyTooltipDirections(); });
+      }
+
+      expandBtn.addEventListener('click', () => setExpanded(!expanded));
+      collapseExpanded = () => setExpanded(false);
+
+      // Переключатель периода в полноэкранном режиме: пилюли страницы остаются
+      // под оверлеем, поэтому в развёрнутой карте рисуем свой. Источник истины —
+      // Svelte-состояние mapPeriod: клик уходит в params.onPeriodChange, данные
+      // возвращаются через update(), где и подсвечивается активная кнопка.
+      // Показывается только в развёрнутом виде и только у карты с фильтром
+      // (params.onPeriodChange передаёт лишь «Карта событий», не карусель).
+      let periodCtl = null;
+
+      function renderPeriodCtl() {
+        if (!lastParams.onPeriodChange) return;
+        if (!periodCtl) {
+          periodCtl = document.createElement('div');
+          periodCtl.className = 'map-period-ctl';
+          for (const [val, label] of [['1d', 'Сутки'], ['7d', 'Неделя'], ['all', 'Весь сюжет']]) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = label;
+            b.dataset.val = val;
+            b.addEventListener('click', () => lastParams.onPeriodChange(val));
+            periodCtl.appendChild(b);
+          }
+          L.DomEvent.disableClickPropagation(periodCtl);
+          L.DomEvent.disableScrollPropagation(periodCtl);
+          node.appendChild(periodCtl);
+        }
+        for (const b of periodCtl.children) {
+          b.classList.toggle('is-active', b.dataset.val === (lastParams.period ?? 'all'));
+        }
+        periodCtl.style.display = expanded ? 'flex' : 'none';
+      }
+      refreshPeriodCtl = renderPeriodCtl;
+
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         subdomains: 'abcd',
         maxZoom: 19,
       }).addTo(map);
 
-      L.circleMarker([lat, lon], {
-        radius:      7,
-        fillColor:   '#57534e',
-        color:       '#ffffff',
-        weight:      2.5,
-        opacity:     1,
-        fillOpacity: 1,
-      }).addTo(map);
+      Lref = L;
+      center = [lat, lon];
+      initialZoom = zoom;
 
-      requestAnimationFrame(() => map.invalidateSize());
+      requestAnimationFrame(() => {
+        map.invalidateSize();
+        // Локации могли успеть прийти, пока грузился Leaflet, — берём свежие
+        // params из lastParams. Рисуем после invalidateSize: fitBounds внутри
+        // renderLocations зависит от фактического размера контейнера.
+        renderLocations(lastParams.locations);
+      });
     }
 
     tryInit(params);
 
     return {
-      update: tryInit,
+      update(next) {
+        lastParams = next;
+        tryInit(next);            // если карта ещё не создана — ждём координат
+        renderLocations(next.locations); // если создана — дорисовываем локации
+        if (refreshPeriodCtl) refreshPeriodCtl(); // подсветка периода в полноэкранном контроле
+      },
       destroy() {
         destroyed = true;
+        // уход со страницы в развёрнутом состоянии: вернуть узел на место и
+        // снять overflow:hidden с body до того, как Svelte удалит элемент
+        if (collapseExpanded) collapseExpanded();
         if (map) map.remove();
       }
     };
@@ -620,6 +897,109 @@ hide_breadcrumbs: true
      собственного белого фона на обёртке. Перекрываем его белым. */
   :global(.leaflet-container) {
     background: #ffffff;
+    /* жест на карте не должен дотягиваться до прокрутки страницы:
+       touch-action страхует случаи, когда leaflet.css не успел навесить свои
+       классы, overscroll-behavior гасит цепочку прокрутки (rubber-band у
+       края страницы при пане карты) */
+    touch-action: none;
+    overscroll-behavior: contain;
+  }
+
+  /* Кнопки зума Leaflet из коробки — резкие серые квадраты с чёрными глифами,
+     выбиваются из стиля страницы. Перекрашиваем в цельную вертикальную
+     «пилюлю»: белая карточка со скруглением и мягкой тенью, кнопки внутри
+     разделены тонкой линией. !important обязателен: leaflet.css подгружается
+     динамически ПОСЛЕ стилей страницы и при равной специфичности
+     (.leaflet-touch .leaflet-bar) перебивает их — именно его рамка иначе
+     остаётся вокруг контрола. */
+  :global(.leaflet-control-zoom.leaflet-bar) {
+    border: none !important;
+    border-radius: 10px !important;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+  }
+  :global(.leaflet-control-zoom a) {
+    width: 28px !important;
+    height: 28px !important;
+    line-height: 26px !important;
+    font-size: 15px;
+    font-weight: 300;
+    font-family: inherit;
+    color: #57534e !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  :global(.leaflet-control-zoom a:last-child) {
+    border-top: 1px solid #e7e5e4 !important;
+  }
+  :global(.leaflet-control-zoom a:hover) {
+    background: #fafaf9 !important;
+    color: #292524 !important;
+  }
+
+  /* Кнопка разворота карты — в манере зум-пилюли; вставляется в DOM из JS,
+     поэтому Svelte-скоуп до неё не достаёт (:global). z-index выше панелей
+     Leaflet (~400) и вровень с контролами (~800). */
+  :global(.map-expand-btn) {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    color: #57534e;
+    cursor: pointer;
+  }
+  :global(.map-expand-btn:hover) {
+    background: #ffffff;
+    color: #292524;
+  }
+
+  /* Переключатель периода на развёрнутой карте — пилюли как у встроенного
+     фильтра раздела; создаётся из JS, поэтому :global. По умолчанию скрыт,
+     display:flex выставляет renderPeriodCtl только в полноэкранном режиме. */
+  :global(.map-period-ctl) {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 900;
+    display: none;
+    gap: 6px;
+  }
+  :global(.map-period-ctl button) {
+    padding: 4px 12px;
+    border: 1px solid #e7e5e4;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    color: #78716c;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  :global(.map-period-ctl button:hover) {
+    color: #292524;
+    background: #ffffff;
+  }
+  :global(.map-period-ctl button.is-active) {
+    background: #57534e;
+    border-color: #57534e;
+    color: #ffffff;
+  }
+  /* достигнут предел зума — кнопка «гаснет», но остаётся на месте */
+  :global(.leaflet-control-zoom a.leaflet-disabled) {
+    color: #d6d3d1 !important;
   }
 
   /* --- Key events: metro-карта --- */
@@ -729,6 +1109,26 @@ SELECT story_nm, CAST(geo_lat AS DOUBLE) AS geo_lat, CAST(geo_lon AS DOUBLE) AS 
 FROM dwh_pg_1.b_stories
 WHERE story_id = ${params.story}
   AND language_code = 'ru'
+```
+
+```sql q_story_locations
+SELECT
+    location_id
+    , canonical_nm
+    , CAST(geo_lat AS DOUBLE) AS geo_lat
+    , CAST(geo_lon AS DOUBLE) AS geo_lon
+    , count(DISTINCT news_id) AS news_cnt
+    -- счётчики периодов для фильтра «Карты событий» (сутки/неделя/весь сюжет).
+    -- CURRENT_DATE, не current_timestamp: DuckDB не вычитает INTERVAL из
+    -- TIMESTAMP WITH TIME ZONE напрямую (см. тот же приём чуть ниже в файле).
+    , count(DISTINCT news_id) FILTER (WHERE published_dttm >= CURRENT_DATE - INTERVAL '1 day') AS news_cnt_1d
+    , count(DISTINCT news_id) FILTER (WHERE published_dttm >= CURRENT_DATE - INTERVAL '7 days') AS news_cnt_7d
+FROM dwh_pg_1.b_story_news_locations
+WHERE story_id = ${params.story}
+  AND geo_lat IS NOT NULL
+  AND geo_lon IS NOT NULL
+GROUP BY location_id, canonical_nm, geo_lat, geo_lon
+ORDER BY news_cnt DESC, canonical_nm
 ```
 
 ```sql q_story_brief
@@ -1197,7 +1597,7 @@ ORDER BY n.published_dttm DESC
               </div>
             {:else if q_story[0] && Number.isFinite(+q_story[0].geo_lat)}
               <div class="-mx-4 -mt-3 mb-3 overflow-hidden" style="aspect-ratio:16/9; background:#f5f4f2; isolation:isolate">
-                <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5 }}
+                <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5, locations: q_story_locations, linkBase: '/stories/' + params.story + '/locations' }}
                      style="height:100%; width:100%; filter:grayscale({slideGrayscale[i] ?? 1}); transition:filter 0.3s ease"></div>
               </div>
             {/if}
@@ -1309,8 +1709,22 @@ ORDER BY n.published_dttm DESC
 ## Карта событий
 
 {#if q_story[0]}
+<!-- Фильтр периода: «Сутки» и «Неделя» показывают только локации с новостями
+     за период (счётчики news_cnt_1d/news_cnt_7d из q_story_locations),
+     «Весь сюжет» — всё. -->
+<div class="not-prose mt-2 flex gap-1.5">
+  {#each [['1d', 'Сутки'], ['7d', 'Неделя'], ['all', 'Весь сюжет']] as [val, label]}
+    <button type="button"
+      class="px-3 py-1 rounded-full text-xs cursor-pointer select-none"
+      style="border:1px solid {mapPeriod === val ? '#57534e' : '#e7e5e4'};
+             background:{mapPeriod === val ? '#57534e' : '#ffffff'};
+             color:{mapPeriod === val ? '#ffffff' : '#78716c'};
+             transition: background 0.15s, color 0.15s, border-color 0.15s"
+      on:click={() => mapPeriod = val}>{label}</button>
+  {/each}
+</div>
 <div class="not-prose mt-2 mb-10 rounded-xl border overflow-hidden" style="background:#ffffff; height:200px; border-color:#e7e5e4; isolation:isolate">
-  <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5 }} style="height:100%; width:100%"></div>
+  <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5, locations: mapLocations, period: mapPeriod, onPeriodChange: (v) => mapPeriod = v, linkBase: '/stories/' + params.story + '/locations' }} style="height:100%; width:100%"></div>
 </div>
 {/if}
 
@@ -1345,6 +1759,14 @@ ORDER BY n.published_dttm DESC
      билд падает ("marked as prerenderable, but were not prerendered"). -->
 {#each q_actors as a}
   <a href="/stories/{params.story}/actors/{a.actor_id}" aria-hidden="true" tabindex="-1" style="display:none"></a>
+{/each}
+
+<!-- Та же история для страниц локаций: на них ведёт только клик по маркеру
+     Leaflet (goto из JS уже в браузере) — ссылок в разметке нет, краулер
+     SvelteKit переход не видит, и без скрытых <a> пререндер
+     `/stories/[story]/locations/[location]` падает. -->
+{#each q_story_locations as l}
+  <a href="/stories/{params.story}/locations/{l.location_id}" aria-hidden="true" tabindex="-1" style="display:none"></a>
 {/each}
 
 </div>

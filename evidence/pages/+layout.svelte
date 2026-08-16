@@ -146,7 +146,8 @@
   $: storyId = $page.params?.story;
   $: day = $page.params?.day;
   $: actorId = $page.params?.actor;
-  $: parentUrl = (day || actorId) ? `/stories/${storyId}` : storyId ? '/stories' : '/';
+  $: locationId = $page.params?.location;
+  $: parentUrl = (day || actorId || locationId) ? `/stories/${storyId}` : storyId ? '/stories' : '/';
   $: isHome = $page.url.pathname === '/';
   $: if (tgWebApp) {
     if (isHome) tgWebApp.BackButton.hide();
@@ -373,7 +374,7 @@
     <nav class="c-breadcrumb">
       {#if !storyId}
         <span class="c-current">Сюжеты</span>
-      {:else if !day && !actorId}
+      {:else if !day && !actorId && !locationId}
         <a href="/stories">Сюжеты</a>
         {#if $breadcrumbStore?.storyName}
           <span class="c-sep">›</span>
@@ -390,7 +391,8 @@
         <span class="c-sep">›</span>
         <a href="/stories/{storyId}" class="c-trunc">{$breadcrumbStore?.storyName || '…'}</a>
         <span class="c-sep">›</span>
-        <span class="c-day">{$breadcrumbStore?.actorName || '…'}</span>
+        <!-- последняя крошка внутренних страниц сюжета: актёр или локация -->
+        <span class="c-day">{$breadcrumbStore?.actorName || $breadcrumbStore?.locationName || '…'}</span>
       {/if}
     </nav>
   {/if}
