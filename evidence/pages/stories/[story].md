@@ -771,6 +771,11 @@ hide_breadcrumbs: true
           node.style.height = 'auto';
           node.style.zIndex = '9999';
           node.style.borderRadius = '0';
+          // Telegram Mini App в полноэкранном режиме рисует контент под системным
+          // статус-баром — без отступа кнопки уезжают в зону часов/заряда. В свёрнутом
+          // виде карта живёт внутри обычного layout страницы (там safe-area уже учтена
+          // общей вёрсткой), поэтому класс включает отступ только на время fullscreen.
+          node.classList.add('map-expanded');
           document.body.style.overflow = 'hidden'; // страница под картой не прокручивается
           document.addEventListener('keydown', onEscape);
           map.scrollWheelZoom.enable();
@@ -778,6 +783,7 @@ hide_breadcrumbs: true
           expandBtn.setAttribute('aria-label', 'Свернуть карту');
         } else {
           node.style.cssText = restoreSpot.cssText;
+          node.classList.remove('map-expanded');
           restoreSpot.parent.insertBefore(node, restoreSpot.next);
           restoreSpot = null;
           document.body.style.overflow = '';
@@ -963,6 +969,23 @@ hide_breadcrumbs: true
   :global(.map-expand-btn:hover) {
     background: #ffffff;
     color: #292524;
+  }
+
+  /* Полноэкранный режим карты (.map-expanded — ставится в setExpanded): контейнер
+     занимает весь вьюпорт, и в Telegram Mini App с открытым fullscreen системный
+     статус-бар (часы/заряд) рисуется поверх контента — без отступа кнопка
+     разворота и переключатель периода уезжают под него. В свёрнутом виде класса
+     нет, значения по умолчанию (top:10px) не меняются. */
+  :global(.map-expanded .map-expand-btn) {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+  }
+  :global(.map-expanded .map-period-ctl) {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+  }
+  /* зум-контрол Leaflet позиционируется через свою обёртку .leaflet-top —
+     margin-top у неё создаёт тот же отступ, не трогая сам .leaflet-control-zoom */
+  :global(.map-expanded .leaflet-top) {
+    margin-top: env(safe-area-inset-top, 0px);
   }
 
   /* Переключатель периода на развёрнутой карте — пилюли как у встроенного
