@@ -766,6 +766,16 @@ hide_breadcrumbs: true
         // клики/колесо по кнопке не должны долетать до карты (пан/дабл-клик-зум)
         L.DomEvent.disableClickPropagation(expandBtn);
         L.DomEvent.disableScrollPropagation(expandBtn);
+
+        // Белая полоса под камерой/часами/статус-баром в полноэкранном режиме —
+        // тот же приём, что у .c-header в общей вёрстке (+layout.svelte): фон
+        // перекрывает safe-area сверху, чтобы тайлы карты не просвечивали под
+        // системными индикаторами. pointer-events:none — это мёртвая зона под
+        // статус-баром, кнопки под ней (см. CSS) не задевает.
+        const topBar = document.createElement('div');
+        topBar.className = 'map-top-bar';
+        topBar.setAttribute('aria-hidden', 'true');
+        node.appendChild(topBar);
       }
 
       function onEscape(e) { if (e.key === 'Escape') setExpanded(false); }
@@ -1015,6 +1025,24 @@ hide_breadcrumbs: true
   }
   :global(html.tg-inapp .map-expanded .leaflet-top) {
     margin-top: calc(env(safe-area-inset-top, 0px) + 44px);
+  }
+
+  /* Белая полоса поверх области статус-бара (см. коммент у создания topBar) —
+     видна только в развёрнутом режиме, скрыта на маленькой встроенной карте */
+  :global(.map-top-bar) {
+    display: none;
+  }
+  :global(.map-expanded .map-top-bar) {
+    display: block;
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: #ffffff;
+    z-index: 800; /* ниже кнопок (900), выше тайлов и маркеров */
+    pointer-events: none;
+  }
+  :global(html.tg-inapp .map-expanded .map-top-bar) {
+    height: calc(env(safe-area-inset-top, 0px) + 44px);
   }
 
   /* Переключатель периода на развёрнутой карте — пилюли как у встроенного
