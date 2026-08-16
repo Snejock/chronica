@@ -7,7 +7,7 @@ cache_resources:
 
 rate_limit_resources:
   # бесплатный тариф GeoNames — ~1000 запросов/час на username, при превышении бан;
-  # держим ~900/час с запасом
+  # установлено ~900/час с запасом
   - label: geonames_api
     local:
       count: 1
