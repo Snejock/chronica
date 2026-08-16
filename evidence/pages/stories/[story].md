@@ -526,6 +526,15 @@ hide_breadcrumbs: true
     }))
     .filter(l => +l.news_cnt > 0);
 
+  // Карта-фолбэк в карусели «Хроники» — на слайд одного дня локации только
+  // этого дня (q_story_locations_by_day), а не всего сюжета: иначе на любом
+  // слайде показывались бы точки со всех дат сразу. Группировка на клиенте —
+  // проще, чем городить in-SQL pivot по дням.
+  $: locationsByDay = (q_story_locations_by_day ?? []).reduce((acc, l) => {
+    (acc[l.iso_dt] ??= []).push(l);
+    return acc;
+  }, {});
+
   // Карта локаций сюжета — интерактивный Leaflet (зум, пан) с точками мест
   // из новостей (q_story_locations).
   // Координаты приходят асинхронно из q_story, поэтому карта появляется в DOM
@@ -1227,6 +1236,25 @@ GROUP BY location_id, canonical_nm, geo_lat, geo_lon
 ORDER BY news_cnt DESC, canonical_nm
 ```
 
+<!-- Локации в разрезе дня — для карты-фолбэка в карусели «Хроники»: там каждый
+     слайд это один день (iso_dt == story_summaries_d.dt), и точки на нём должны
+     быть только за этот день, а не за весь сюжет. -->
+```sql q_story_locations_by_day
+SELECT
+    strftime(published_dttm, '%Y-%m-%d') AS iso_dt
+    , location_id
+    , canonical_nm
+    , CAST(geo_lat AS DOUBLE) AS geo_lat
+    , CAST(geo_lon AS DOUBLE) AS geo_lon
+    , count(DISTINCT news_id) AS news_cnt
+FROM dwh_pg_1.b_story_news_locations
+WHERE story_id = ${params.story}
+  AND geo_lat IS NOT NULL
+  AND geo_lon IS NOT NULL
+GROUP BY iso_dt, location_id, canonical_nm, geo_lat, geo_lon
+ORDER BY iso_dt, news_cnt DESC, canonical_nm
+```
+
 ```sql q_story_brief
 SELECT brief_txt
 FROM dwh_pg_1.story_briefs
@@ -1693,7 +1721,7 @@ ORDER BY n.published_dttm DESC
               </div>
             {:else if q_story[0] && Number.isFinite(+q_story[0].geo_lat)}
               <div class="-mx-4 -mt-3 mb-3 overflow-hidden" style="aspect-ratio:16/9; background:#f5f4f2; isolation:isolate">
-                <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5, locations: q_story_locations, linkBase: '/stories/' + params.story + '/locations', interactive: false }}
+                <div use:leafletMap={{ lat: +q_story[0].geo_lat, lon: +q_story[0].geo_lon, zoom: 5, locations: locationsByDay[entry.iso_dt] ?? [], linkBase: '/stories/' + params.story + '/locations', interactive: false }}
                      style="height:100%; width:100%; filter:grayscale({slideGrayscale[i] ?? 1}); transition:filter 0.3s ease"></div>
               </div>
             {/if}
