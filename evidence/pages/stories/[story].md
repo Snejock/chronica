@@ -719,6 +719,14 @@ hide_breadcrumbs: true
         attributionControl: false,
       });
 
+      // leaflet.css сам ставит touch-action:none на .leaflet-container (чтобы
+      // жесты доставались JS, а не браузеру) — независимо от опций выше. Для
+      // некликабельной карты в карусели это же правило глушит нативный
+      // горизонтальный свайп между слайдами, стоит только тронуть карту.
+      // Возвращаем браузеру право на жест явно (перебивает и leaflet.css,
+      // и наше собственное .leaflet-container ниже — по специфичности класса).
+      if (!mapInteractive) node.classList.add('map-static');
+
       // При живом зуме/пане позиция маркера относительно краёв меняется —
       // пересчитываем направления тултипов после каждого сдвига вьюпорта.
       map.on('zoomend moveend', applyTooltipDirections);
@@ -934,6 +942,14 @@ hide_breadcrumbs: true
        края страницы при пане карты) */
     touch-action: none;
     overscroll-behavior: contain;
+  }
+  /* Некликабельная карта в карусели (.map-static, см. tryInit): жест должен
+     доставаться браузеру — горизонтальному свайпу между слайдами и странице,
+     а не карте, которая всё равно не панится. Специфичность двух классов
+     побеждает и leaflet.css, и правило .leaflet-container выше. */
+  :global(.leaflet-container.map-static) {
+    touch-action: auto;
+    overscroll-behavior: auto;
   }
 
   /* Кнопки зума Leaflet из коробки — резкие серые квадраты с чёрными глифами,
