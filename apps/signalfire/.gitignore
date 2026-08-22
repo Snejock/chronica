@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-ssr/
+.env
+.env.*
+*.local
+
+# Editors
+.vscode/*
+!.vscode/extensions.json

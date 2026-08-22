@@ -1,0 +1,44 @@
+name: chronica
+
+services:
+  sgn-web-dev:
+    build:
+      context: ../
+      dockerfile: compose/Dockerfile
+      target: dev
+    container_name: sgn-web-dev
+    restart: unless-stopped
+    networks:
+      - dwh-net
+    ports:
+      - "33021:3000"
+    volumes:
+      - ../src:/app/src
+      - ../index.html:/app/index.html
+      - ../package.json:/app/package.json
+      - ../package-lock.json:/app/package-lock.json
+      - ../vite.config.ts:/app/vite.config.ts
+      - ../tsconfig.json:/app/tsconfig.json
+      - ../tsconfig.app.json:/app/tsconfig.app.json
+      - ../tsconfig.node.json:/app/tsconfig.node.json
+      - ../eslint.config.js:/app/eslint.config.js
+      - sgn-web-dev-modules:/app/node_modules
+
+  sgn-web-prod:
+    build:
+      context: ../
+      dockerfile: compose/Dockerfile
+      target: prod
+    container_name: sgn-web-prod
+    restart: unless-stopped
+    networks:
+      - dwh-net
+    ports:
+      - "33020:3000"
+
+networks:
+  dwh-net:
+    external: true
+
+volumes:
+  sgn-web-dev-modules:
