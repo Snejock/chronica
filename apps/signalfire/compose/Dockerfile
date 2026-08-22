@@ -13,11 +13,10 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Prod: неизменяемый образ, раздаёт собранную статику. Пересобирается вручную при деплое
-# (docker compose up -d --build), без фоновых процессов внутри контейнера.
-FROM node:24-alpine AS prod
-WORKDIR /app
-RUN npm install --global serve
-COPY --from=build /app/dist ./dist
-EXPOSE 3000
-CMD ["serve", "-s", "-l", "3000", "dist"]
+# Prod: неизменяемый образ, раздаёт собранную статику через nginx. Пересобирается вручную
+# при деплое (docker compose up -d --build), без фоновых процессов и без обращений к npm
+# registry на этом этапе — только сам базовый образ nginx.
+FROM nginx:1.27-alpine AS prod
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY compose/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
