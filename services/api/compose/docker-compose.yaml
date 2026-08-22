@@ -1,0 +1,34 @@
+name: chronica
+
+services:
+  chr-api:
+    build:
+      context: ../../../
+      dockerfile: services/api/compose/Dockerfile
+      network: host
+    container_name: chr-api
+    env_file:
+      - path: ../../../.env
+        required: true
+    restart: unless-stopped
+    networks:
+      - dwh-net
+    ports:
+      - "33010:8000"
+    volumes:
+      - ../log:/app/services/api/log
+    environment:
+      - TZ=Europe/Moscow
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    init: true
+    command: ["python", "api.py"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dwh-net:
+    external: true

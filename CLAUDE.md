@@ -23,6 +23,7 @@ MOEX → moex-fetcher ─────────┘                            
 | `dwh/dbt/` | dbt project (own README, custom materializations) |
 | `services/{rss-fetcher,moex-fetcher}/` | Python data-collector services |
 | `services/tg-sender/` | Consumes the `tg_notifications` topic, sends per-subscriber Telegram messages |
+| `services/api/` | FastAPI backend for the Signalfire frontend (React/Vue, TBD) |
 | `services/template/` | Canonical skeleton for a new service |
 | `common/` | Shared package `chronica-common` (Pydantic models, utils), workspace member |
 | `evidence/` | Evidence.dev (SvelteKit) BI dashboard |

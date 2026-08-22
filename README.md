@@ -19,6 +19,7 @@ MOEX → moex-fetcher ──────────┘                         
 | `rss-fetcher` | Периодический опрос RSS-лент, парсинг и публикация новостей в Redpanda |
 | `moex-fetcher` | Стриминг биржевых сделок с MOEX ISS API, запись в ClickHouse (`ods.moex_trades`) |
 | `tg-sender` | Отправка персонализированных уведомлений о новостях подписчикам в Telegram (консьюмер топика `tg_notifications`) |
+| `api` | FastAPI-бэкенд для будущего фронтенда Signalfire (пока только `/health`, без бизнес-логики и БД) |
 
 ### Хранилище данных (`/dwh`)
 
