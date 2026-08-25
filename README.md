@@ -19,11 +19,11 @@
 <sub><b>Без лишнего шума</b><br>один экран вместо десятков лент</sub>
 </td>
 <td width="33%" align="center">
-<img src="docs/screenshots/stories-list.jpg" width="260" alt="Лента сюжетов"><br>
+<img src="docs/screenshots/story-detail.jpg" width="260" alt="Карточка сюжета с таймлайном"><br>
 <sub><b>Сюжеты, а не заметки</b><br>сотни публикаций сведены в одну карточку</sub>
 </td>
 <td width="33%" align="center">
-<img src="docs/screenshots/story-detail.jpg" width="260" alt="Карточка сюжета с таймлайном"><br>
+<img src="docs/screenshots/story-feed.jpg" width="260" alt="Лента публикаций сюжета с источниками"><br>
 <sub><b>Хронология сама себя пишет</b><br>ключевые события на общей шкале времени</sub>
 </td>
 </tr>
@@ -42,13 +42,6 @@
 </td>
 </tr>
 </table>
-
-<div align="center">
-<img src="docs/screenshots/story-feed.jpg" width="260" alt="Лента публикаций сюжета с источниками">
-<br><sub>Каждая карточка сюжета разворачивается в ленту первоисточников — ни одна публикация не теряется</sub>
-</div>
-
-<br>
 
 ## Что делает Chronica
 
