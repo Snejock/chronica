@@ -15,29 +15,29 @@
 <table>
 <tr>
 <td width="33%" align="center">
-<img src="docs/screenshots/hero.jpg" width="260" alt="Главный экран Chronica"><br>
+<img src="docs/screenshots/hero.png" width="260" alt="Главный экран Chronica"><br>
 <sub><b>Без лишнего шума</b><br>один экран вместо десятков лент</sub>
 </td>
 <td width="33%" align="center">
-<img src="docs/screenshots/story-detail.jpg" width="260" alt="Карточка сюжета с таймлайном"><br>
+<img src="docs/screenshots/story-detail.png" width="260" alt="Карточка сюжета с таймлайном"><br>
 <sub><b>Сюжеты, а не заметки</b><br>сотни публикаций сведены в одну карточку</sub>
 </td>
 <td width="33%" align="center">
-<img src="docs/screenshots/story-feed.jpg" width="260" alt="Лента публикаций сюжета с источниками"><br>
+<img src="docs/screenshots/story-feed.png" width="260" alt="Лента публикаций сюжета с источниками"><br>
 <sub><b>Хронология сама себя пишет</b><br>ключевые события на общей шкале времени</sub>
 </td>
 </tr>
 <tr>
 <td width="33%" align="center">
-<img src="docs/screenshots/story-forecast-map.jpg" width="260" alt="Прогноз развития и карта событий"><br>
+<img src="docs/screenshots/story-forecast-map.png" width="260" alt="Прогноз развития и карта событий"><br>
 <sub><b>Куда идёт сюжет</b><br>вероятностный прогноз на 7 дней + карта событий</sub>
 </td>
 <td width="33%" align="center">
-<img src="docs/screenshots/actor-profile.jpg" width="260" alt="Карточка действующего лица"><br>
+<img src="docs/screenshots/actor-profile.png" width="260" alt="Карточка действующего лица"><br>
 <sub><b>Кто есть кто</b><br>действующие лица распознаются и связываются автоматически</sub>
 </td>
 <td width="33%" align="center">
-<img src="docs/screenshots/location-profile.jpg" width="260" alt="Карточка места события"><br>
+<img src="docs/screenshots/location-profile.png" width="260" alt="Карточка места события"><br>
 <sub><b>Где это происходит</b><br>места событий геокодируются и собираются в один профиль</sub>
 </td>
 </tr>
