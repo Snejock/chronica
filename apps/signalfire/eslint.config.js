@@ -20,4 +20,13 @@ export default tseslint.config([
       globals: globals.browser,
     },
   },
+  {
+    // shadcn генерирует компоненты вместе с их cva-вариантами/хуками в одном файле —
+    // это их устоявшийся паттерн, файлы перезаписываются при `shadcn add`, поэтому
+    // здесь react-refresh/only-export-components не применяем.
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
 ]);
