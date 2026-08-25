@@ -12,36 +12,58 @@
 
 <br>
 
-<table>
-<tr>
-<td width="33%" align="center">
-<img src="docs/screenshots/hero.png" width="260" alt="Главный экран Chronica"><br>
-<sub><b>Без лишнего шума</b><br>один экран вместо десятков лент</sub>
-</td>
-<td width="33%" align="center">
-<img src="docs/screenshots/story-detail.png" width="260" alt="Карточка сюжета с таймлайном"><br>
-<sub><b>Сюжеты, а не заметки</b><br>сотни публикаций сведены в одну карточку</sub>
-</td>
-<td width="33%" align="center">
-<img src="docs/screenshots/story-feed.png" width="260" alt="Лента публикаций сюжета с источниками"><br>
-<sub><b>Хронология сама себя пишет</b><br>ключевые события на общей шкале времени</sub>
-</td>
-</tr>
-<tr>
-<td width="33%" align="center">
-<img src="docs/screenshots/story-forecast-map.png" width="260" alt="Прогноз развития и карта событий"><br>
-<sub><b>Куда идёт сюжет</b><br>вероятностный прогноз на 7 дней + карта событий</sub>
-</td>
-<td width="33%" align="center">
-<img src="docs/screenshots/actor-profile.png" width="260" alt="Карточка действующего лица"><br>
-<sub><b>Кто есть кто</b><br>действующие лица распознаются и связываются автоматически</sub>
-</td>
-<td width="33%" align="center">
-<img src="docs/screenshots/location-profile.png" width="260" alt="Карточка места события"><br>
-<sub><b>Где это происходит</b><br>места событий геокодируются и собираются в один профиль</sub>
-</td>
-</tr>
-</table>
+<img src="docs/screenshots/hero.png" align="left" width="280" alt="Главный экран Chronica" />
+
+### Без лишнего шума
+Открываешь — и сразу главное. Материалы из открытых источников уже сгруппированы по темам:
+никаких лент, никакого скролла в поисках сути.
+
+<br clear="left"/>
+<br>
+
+<img src="docs/screenshots/story-detail.png" align="left" width="280" alt="Карточка сюжета с таймлайном" />
+
+### Сюжеты, а не заметки
+Сотни публикаций из разных источников сходятся в одну карточку — со сводкой и хронологией
+ключевых событий на общей шкале времени.
+
+<br clear="left"/>
+<br>
+
+<img src="docs/screenshots/story-feed.png" align="left" width="280" alt="Лента публикаций сюжета с источниками" />
+
+### Ни одна публикация не теряется
+Карточка сюжета разворачивается в ленту первоисточников — вплоть до конкретного заголовка,
+издания и минуты выхода.
+
+<br clear="left"/>
+<br>
+
+<img src="docs/screenshots/story-forecast-map.png" align="left" width="280" alt="Прогноз развития и карта событий" />
+
+### Куда идёт сюжет
+Вероятностный прогноз на 7 дней с историей изменений день к дню и карта событий — сюжет
+как живая система, а не застывший текст.
+
+<br clear="left"/>
+<br>
+
+<img src="docs/screenshots/actor-profile.png" align="left" width="280" alt="Карточка действующего лица" />
+
+### Кто есть кто
+Имена распознаются и разрешаются в устойчивые сущности: все упоминания одного человека —
+цитаты, публикации, хроника — собираются в единый профиль.
+
+<br clear="left"/>
+<br>
+
+<img src="docs/screenshots/location-profile.png" align="left" width="280" alt="Карточка места события" />
+
+### Где это происходит
+Места событий геокодируются и сводятся в общий профиль — от страны и города до точки на карте.
+
+<br clear="both"/>
+<br>
 
 ## Что делает Chronica
 
