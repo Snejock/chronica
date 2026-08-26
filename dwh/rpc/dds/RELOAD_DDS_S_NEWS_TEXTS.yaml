@@ -48,7 +48,7 @@ pipeline:
                 WHERE NOT EXISTS (SELECT 1
                                   FROM dds.s_news_texts s
                                   WHERE xxh64(ods.link) = s.news_id)) AS t
-          LEFT JOIN dds.d_rss_feeds d ON t.feed_id = d.feed_id
+          LEFT JOIN dds.r_rss_feeds d ON t.feed_id = d.feed_id
           LIMIT 50
 
     # unarchive разбивает этот массив на отдельные сообщения

@@ -38,7 +38,7 @@ pipeline:
                 cache:
                   resource: redis_cache
                   operator: get
-                  key: "lookup:dds.d_rss_feeds:${! this.feed_id }"
+                  key: "lookup:dds.r_rss_feeds:${! this.feed_id }"
         result_map: 'root.language_code = content().string().catch("")'
 
     # сброс флага ошибки от штатного cache-miss (get по отсутствующему ключу), чтобы он не доезжал до avro-catch на выходе out_redpanda
@@ -53,7 +53,7 @@ pipeline:
             sql_raw:
               driver: postgres
               dsn: postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}?sslmode=disable
-              query: "SELECT feed_id, language_code FROM dds.d_rss_feeds WHERE feed_id = $1"
+              query: "SELECT feed_id, language_code FROM dds.r_rss_feeds WHERE feed_id = $1"
               args_mapping: "root = [this.feed_id]"
           # добавление значения language_code в кэш
           - branch:
@@ -63,7 +63,7 @@ pipeline:
                 - cache:
                     resource: redis_cache
                     operator: set
-                    key: 'lookup:dds.d_rss_feeds:${! this.index(0).feed_id.string() }'
+                    key: 'lookup:dds.r_rss_feeds:${! this.index(0).feed_id.string() }'
                     value: '${! this.index(0).language_code.string() }'
         result_map: 'root.language_code = this.index(0).language_code.catch("unknown")'
 

@@ -41,7 +41,7 @@ pipeline:
                , s.title_txt, s.summary_txt, e.model_nm, e.embedding_vct
           FROM dds.s_news_embeddings e
           JOIN dds.h_news h       ON h.news_id = e.news_id
-          JOIN dds.d_rss_feeds f  ON f.feed_id = h.feed_id
+          JOIN dds.r_rss_feeds f  ON f.feed_id = h.feed_id
           JOIN dds.s_news_texts s ON s.news_id = e.news_id AND s.language_code IN ('en', 'ru')
           CROSS JOIN LATERAL (
               SELECT (e2.embedding_vct <=> e.embedding_vct)::numeric(4, 3) AS distance_prt

@@ -281,7 +281,7 @@ output:
             SELECT h.news_id, h.published_dttm, f.feed_nm, s.language_code
                  , s.title_txt, s.summary_txt, $2, $3::vector
             FROM dds.h_news h
-            JOIN dds.d_rss_feeds f  ON f.feed_id = h.feed_id
+            JOIN dds.r_rss_feeds f  ON f.feed_id = h.feed_id
             JOIN dds.s_news_texts s ON s.news_id = h.news_id AND s.language_code IN ('en', 'ru')
             WHERE h.news_id = xxh64($1)
             ON CONFLICT (news_id, language_code, model_nm) DO NOTHING;

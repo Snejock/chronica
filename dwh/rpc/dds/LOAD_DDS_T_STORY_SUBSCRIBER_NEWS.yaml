@@ -52,7 +52,7 @@ pipeline:
               ) nt ON true
               LEFT JOIN dds.s_news_media sm ON sunt.news_id = sm.news_id
               JOIN dds.h_news h ON sunt.news_id = h.news_id
-              LEFT JOIN dds.d_rss_feeds rf ON rf.feed_id = h.feed_id
+              LEFT JOIN dds.r_rss_feeds rf ON rf.feed_id = h.feed_id
               WHERE h.published_dttm > s.subscribed_dttm
                 AND h.published_dttm > now() - interval '1' day
                 -- анти-джойн на уровне (subscriber, news):

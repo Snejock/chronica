@@ -122,7 +122,7 @@ class Application:
                     language_code,
                     interval_sec AS interval,
                     is_active
-                FROM dds.d_rss_feeds 
+                FROM dds.r_rss_feeds
                 WHERE is_active = true;
             """)
 
