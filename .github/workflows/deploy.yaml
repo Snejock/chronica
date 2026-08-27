@@ -24,3 +24,5 @@ jobs:
             cd /media/data/projects/chronica
             git fetch origin master
             git reset --hard origin/master
+            mkdir -p /media/data/projects/dwh/rpc/chronica                                                                                                                                                                                                                                                        
+            rsync -a --delete dwh/rpc/ /media/data/projects/dwh/rpc/chronica/
