@@ -141,7 +141,8 @@ output:
                 subject: "tg_notifications-value"
                 schema_metadata: "schema"
                 format: "avro"
-                avro_raw_json: true
+                avro:
+                  raw_json: true
           - catch:
             - log:
                 level: ERROR
