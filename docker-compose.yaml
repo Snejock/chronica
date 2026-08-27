@@ -5,12 +5,6 @@ include:
   # - services/moex_fetcher/compose/docker-compose.yaml
   - services/tg-sender/compose/docker-compose.yaml
   # - services/api/compose/docker-compose.yaml
-  - dwh/compose/clickhouse/docker-compose.yaml
-  - dwh/compose/postgres/docker-compose.yaml
-  - dwh/compose/redis/docker-compose.yaml
-  - dwh/compose/redpanda/docker-compose.yaml
-  - dwh/compose/ollama/docker-compose.yaml
-  - dwh/compose/minio/docker-compose.yaml
   - evidence/compose/docker-compose.yaml
   - apps/signalfire/compose/docker-compose.yaml
 
