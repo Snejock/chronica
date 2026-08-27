@@ -26,3 +26,5 @@ jobs:
             git reset --hard origin/master
             mkdir -p /media/data/projects/dwh/rpc/chronica                                                                                                                                                                                                                                                        
             rsync -a --delete dwh/rpc/ /media/data/projects/dwh/rpc/chronica/
+            mkdir -p /media/data/projects/dwh/migrations/chronica                                                                                                                                                                                                                                                 
+            rsync -a --delete dwh/migrations/ /media/data/projects/dwh/migrations/chronica/
