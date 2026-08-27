@@ -132,10 +132,15 @@ output:
               root.image_url = this.image_url.string().or("")
               root.feed_nm = this.feed_nm.string().or("")
               root.language_code = this.language_code.string().or("ru")
+              # Схема берётся из dwh/migrations/<project>/rp и при отсутствии subject'а
+              # в registry регистрируется автоматически через schema_metadata
+              meta schema = file("/migrations/chronica/rp/tg_notifications.json").parse_json()
           - try:
             - schema_registry_encode:
                 url: "http://dwh-rp-1:8081"
                 subject: "tg_notifications-value"
+                schema_metadata: "schema"
+                format: "avro"
                 avro_raw_json: true
           - catch:
             - log:
