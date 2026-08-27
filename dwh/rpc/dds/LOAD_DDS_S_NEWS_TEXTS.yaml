@@ -297,17 +297,11 @@ output:
               root.language_code = this.language_code.string().or("unknown")
               root.title_txt = this.title.string().or("")
               root.summary_txt = this.summary.string().or("")
-              # Схема берётся из dwh/migrations/<project>/rp и при отсутствии subject'а
-              # в registry регистрируется автоматически через schema_metadata
-              meta schema = file("/migrations/chronica/rp/news_translated.json").parse_json()
           - try:
               - schema_registry_encode:
                   url: "http://dwh-rp-1:8081"
                   subject: "news_translated-value"
-                  schema_metadata: "schema"
-                  format: "avro"
-                  avro:
-                    raw_json: true
+                  avro_raw_json: true
           - catch:
               - log:
                   level: ERROR
