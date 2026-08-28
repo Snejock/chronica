@@ -19,7 +19,7 @@ a permission prompt.
 
 | Container | What it is |
 |-----------|------------|
-| `dwh-pg-1` | Postgres (core DB) |
+| `dwh-pg-1` | Postgres (chronica DB) |
 | `dwh-ch-1` | ClickHouse |
 | `dwh-rd-1` | Redis (cache) |
 | `dwh-rd-insight` | RedisInsight UI |

@@ -2,6 +2,6 @@
 name: dwh_pg_1
 type: postgres
 options:
-  database: core
+  database: chronica
   host: dwh-pg-1
   port: 5432

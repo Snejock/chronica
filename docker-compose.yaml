@@ -1,6 +1,7 @@
 name: chronica
 
 include:
+  - dwh/compose/redpanda/docker-compose.yaml
   - services/rss-fetcher/compose/docker-compose.yaml
   # - services/moex_fetcher/compose/docker-compose.yaml
   - services/tg-sender/compose/docker-compose.yaml

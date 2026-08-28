@@ -1,6 +1,6 @@
 ---
 name: query-postgres
-description: Query the Chronica Postgres DB (core) on loki. Use whenever the user asks to read/inspect data or schema in Postgres — run a SELECT, count rows, check a table's columns, verify a migration landed, or debug a pipeline's output. Read-only.
+description: Query the Chronica Postgres DB (chronica) on loki. Use whenever the user asks to read/inspect data or schema in Postgres — run a SELECT, count rows, check a table's columns, verify a migration landed, or debug a pipeline's output. Read-only.
 ---
 
 The Chronica Postgres DB is not reachable locally — it only exists inside the `dwh-pg-1`

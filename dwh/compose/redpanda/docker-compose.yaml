@@ -1,0 +1,41 @@
+services:
+  chr-rp-connect:
+    image: redpandadata/connect:4.106
+    container_name: chr-rp-connect
+    restart: unless-stopped
+    networks:
+      - dwh-net
+    ports:
+      - '34195:4195'
+    volumes:
+      - ../../rpc:/streams:ro
+      - ./config:/etc/redpanda-connect
+    environment:
+      - PG_USER=${POSTGRES__USER}
+      - PG_PASSWORD=${POSTGRES__PASSWORD}
+      - PG_DATABASE=${POSTGRES__DATABASE}
+      - PG_HOST=${POSTGRES__HOST}
+      - PG_PORT=${POSTGRES__PORT}
+      - DEEPSEEK_API_KEY=${DEEPSEEK__API_KEY}
+      - GEONAMES_USERNAME=${GEONAMES__USERNAME}
+      - MINIO_USER=${MINIO__USER}
+      - MINIO_PASSWORD=${MINIO__PASSWORD}
+      - MINIO_ENDPOINT=${MINIO__ENDPOINT}
+      - MINIO_BUCKET_ACTOR_MEDIA=${MINIO__BUCKET_ACTOR_MEDIA}
+      - MINIO_PUBLIC_BASE_URL=${MINIO__PUBLIC_BASE_URL}
+    command: [
+      'streams',
+      '-w',
+      '-o', '/etc/redpanda-connect/connect.yaml',
+      '-r', '/etc/redpanda-connect/resources.yaml',
+      '/streams'
+    ]
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+networks:
+  dwh-net:
+    external: true

@@ -133,7 +133,7 @@ Pydantic models/utils live in `common/` as the `chronica-common` package. Only
 
 ## Evidence (BI dashboard)
 
-Evidence.dev / SvelteKit. Single source `evidence/sources/dwh_pg_1/` (Postgres, db `core`),
+Evidence.dev / SvelteKit. Single source `evidence/sources/dwh_pg_1/` (Postgres, db `chronica`),
 reading from the `bds`/`dm` layers. Pages live under `evidence/pages/*.md`. Dev instance on
 `:33001` (hot reload), prod on `:33000` (rebuilds sources every 20 min). Never commit
 `connection.options.yaml` (credentials).
@@ -156,7 +156,7 @@ reading from the `bds`/`dm` layers. Pages live under `evidence/pages/*.md`. Dev 
 
 ## Working conventions
 
-- Direct DB queries: `ssh loki "docker exec -i dwh-pg-1 psql -U core -d core -c '...'"`.
+- Direct DB queries: `ssh loki "docker exec -i dwh-pg-1 psql -U core -d chronica -c '...'"`.
 - Don't run Evidence dev or Docker locally to verify changes — the user tests on the
   `loki` server (`dev.chronica` → `chr-evidence-dev`) and syncs files there themselves.
 - Production deploys go out from `master` via CI onto `loki`.
