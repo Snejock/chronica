@@ -6,7 +6,7 @@ include:
   - services/tg-sender/compose/docker-compose.yaml
   # - services/api/compose/docker-compose.yaml
   - evidence/compose/docker-compose.yaml
-  - apps/signalfire/compose/docker-compose.yaml
+  # - apps/signalfire/compose/docker-compose.yaml
 
 networks:
   dwh-net:
