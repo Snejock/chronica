@@ -11,7 +11,7 @@ from models import Config
 from packages.providers import BrokerProvider, TelegramProvider
 
 logger = logging.getLogger(__name__)
-TOPIC = "tg_notifications"
+TOPIC = "CHR_TG_NOTIFICATIONS"
 CONSUMER_GROUP_ID = "TG-SENDER"
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 DEFAULT_LOCALE = "ru"

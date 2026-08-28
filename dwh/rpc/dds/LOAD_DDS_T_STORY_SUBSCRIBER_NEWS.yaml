@@ -118,7 +118,7 @@ output:
       - label: out_redpanda
         redpanda:
           seed_brokers: ["dwh-rp-1:9092"]
-          topic: "tg_notifications"
+          topic: "CHR_TG_NOTIFICATIONS"
           key: '${! meta("key") }'
         processors:
           - mapping: |
@@ -135,7 +135,7 @@ output:
           - try:
             - schema_registry_encode:
                 url: "http://dwh-rp-1:8081"
-                subject: "tg_notifications-value"
+                subject: "CHR_TG_NOTIFICATIONS-value"
                 avro_raw_json: true
           - catch:
             - log:
